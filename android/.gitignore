@@ -1,0 +1,45 @@
+
+# OSX
+.DS_Store
+
+# Android / IntelliJ
+build/
+.idea/
+.gradle/
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# React Native
+node_modules/
+android/.gradle/
+android/app/build/
+android/build/
+ios/build/
+ios/Pods/
+
+# Bundle artifacts
+*.jsbundle
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Signing keys - never upload private keys
+*.keystore
+*.jks
+
+# IDE files
+.vscode/
