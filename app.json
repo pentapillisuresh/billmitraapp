@@ -10,7 +10,8 @@
     "icon": "./assets/images/logo1.png",
     "plugins": [
       "expo-router",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store"
     ],
     "android": {
       "package": "com.billmitra.billing"
