@@ -182,7 +182,7 @@ export default function Dashboard() {
         if (storedUser?.id) {
           // 2. Fetch data from API
           const response =await getHomeDashboard(storedUser.id);
-console.log("rrr::",response);
+
           setData(response.data);
         }
       } catch (error) {
