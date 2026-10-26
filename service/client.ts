@@ -2,8 +2,10 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { getToken, removeToken } from '../utils/storage';
 
-// const apiUrl = Constants.expoConfig?.extra?.apiUrl || 'https://api.coolieglobal.com/api';
-const apiUrl = Constants.expoConfig?.extra?.apiUrl || 'http://192.168.0.4:5001/api';
+const apiUrl = Constants.expoConfig?.extra?.apiUrl || 'https://api.coolieglobal.com/api';
+// const apiUrl =
+//   Constants.expoConfig?.extra?.apiUrl ||
+//   'http://172.31.183.71:5001/api';
 
 const client = axios.create({
   baseURL: apiUrl,
