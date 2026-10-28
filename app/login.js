@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Logo } from '../components/ui';
 import { C } from '../constants/colors';
 import { outletLogin } from '../service/auth';
-import {storeToken,storeUser,storeIsLogin,storeRememberedEmail,removeRememberedEmail,getRememberedEmail} from '../utils/storage';
+import {storeToken,storeUser,storeIsLogin,storeRememberedEmail,removeRememberedEmail,getRememberedEmail, clearAuth} from '../utils/storage';
 
 export default function Login() {
   const [email, setEmail] = useState('jyothi@gmail.com');
@@ -20,12 +20,9 @@ export default function Login() {
   /* Preload the last-used email */
   useEffect(() => {
     (async () => {
-      const saved = await getRememberedEmail();
-      if (saved) {
-        setEmail(saved);
-        setRemember(true);
-      }
-    })();
+      await clearAuth()
+        })();
+
   }, []);
 
   const handleLogin = async () => {
