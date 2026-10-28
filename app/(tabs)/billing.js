@@ -1,26 +1,8 @@
-import React, {
-  useMemo,
-  useState,
-} from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  TextInput,
-  StyleSheet,
-} from 'react-native';
-
+import React, { useMemo, useState } from 'react';
+import {ScrollView,Text,View,Pressable,TextInput,StyleSheet,ActivityIndicator} from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-  Button,
-} from '../../components/ui';
-
+import { Button } from '../../components/ui';
 import { C } from '../../constants/colors';
 import { useApp } from '../../context/AppContext';
 
@@ -31,6 +13,7 @@ export default function Billing() {
     cart = [],
     clearCart,
     bills = [],
+    loading, // Added from AppContext
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -42,22 +25,18 @@ export default function Billing() {
   */
 
   const filtered = useMemo(() => {
-    const q = search
-      .trim()
-      .toLowerCase();
+    const q = search.trim().toLowerCase();
 
     return inventory.filter((item) => {
-      const name = String(
-        item?.name || ''
-      ).toLowerCase();
-
-      const category = String(
-        item?.category || ''
-      ).toLowerCase();
+      const name = String(item?.name || '').toLowerCase();
+      const sku = String(item?.sku || '').toLowerCase();
+      // Backend uses categoryName (can be ID or string)
+      const category = String(item?.categoryName || '').toLowerCase(); 
 
       return (
         !q ||
         name.includes(q) ||
+        sku.includes(q) ||
         category.includes(q)
       );
     });
@@ -69,216 +48,92 @@ export default function Billing() {
   =========================================================
   */
 
-  const billCount = Array.isArray(bills)
-    ? bills.length
-    : 0;
+  const billCount = Array.isArray(bills) ? bills.length : 0;
+
+  /*
+  =========================================================
+  LOADING STATE
+  =========================================================
+  */
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={C.primary} />
+        <Text style={{ marginTop: 12, color: C.muted, fontWeight: '600' }}>
+          Loading Inventory...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={
-          styles.contentContainer
-        }
+        contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* =================================================
-            TOP SPACING
-            Keeps content below global hamburger
-        ================================================= */}
-
+        {/* TOP SPACING */}
         <View style={styles.topSpacer} />
 
-        {/* =================================================
-            PAGE HEADER
-        ================================================= */}
-
-   <View style={styles.topHeader}>
-  <View style={styles.titleBlock}>
-    <Text style={styles.pageTitle}>New Bill</Text>
-    <Text style={styles.pageSubtitle}>Sell products from Live Stock</Text>
-  </View>
-
-  {cart.length > 0 && (
-    <Pressable style={styles.clearButton} onPress={clearCart}>
-      <Ionicons name="trash-outline" size={16} color="#DC2626" />
-      <Text style={styles.clearText}>Clear</Text>
-    </Pressable>
-  )}
-</View>
-
-
-        {/* =================================================
-            BILL HISTORY
-        ================================================= */}
-
-        <Pressable
-          onPress={() =>
-            router.push('/bill-history')
-          }
-          style={({ pressed }) => [
-            styles.billHistoryCard,
-            pressed &&
-              styles.billHistoryPressed,
-          ]}
-        >
-
-          {/* ICON */}
-
-          <View style={styles.billHistoryIcon}>
-
-            <Ionicons
-              name="receipt-outline"
-              size={23}
-              color={C.primary}
-            />
-
+        {/* PAGE HEADER */}
+        <View style={styles.topHeader}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.pageTitle}>New Bill</Text>
+            <Text style={styles.pageSubtitle}>Sell products from Live Stock</Text>
           </View>
 
-
-          {/* CONTENT */}
-
-          <View
-            style={
-              styles.billHistoryContent
-            }
-          >
-
-            <Text
-              style={
-                styles.billHistoryTitle
-              }
-            >
-              Bill History
-            </Text>
-
-            <Text
-              style={
-                styles.billHistorySubtitle
-              }
-            >
-              View all generated bills
-            </Text>
-
-          </View>
-
-
-          {/* COUNT */}
-
-          <View
-            style={
-              styles.billHistoryCountBox
-            }
-          >
-
-            <Text
-              style={
-                styles.billHistoryCount
-              }
-            >
-              {billCount}
-            </Text>
-
-            <Text
-              style={
-                styles.billHistoryCountLabel
-              }
-            >
-              Bills
-            </Text>
-
-          </View>
-
-
-          {/* ARROW */}
-
-          <View
-            style={
-              styles.billHistoryArrow
-            }
-          >
-
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={C.muted}
-            />
-
-          </View>
-
-        </Pressable>
-
-
-        {/* =================================================
-            INVENTORY SECTION
-        ================================================= */}
-
-        <View
-          style={
-            styles.inventoryIntro
-          }
-        >
-
-          <View>
-
-            <Text
-              style={
-                styles.inventoryTitle
-              }
-            >
-              Inventory Items
-            </Text>
-
-            <Text
-              style={
-                styles.inventorySubtitle
-              }
-            >
-              Only Live Stock can be billed.
-            </Text>
-
-          </View>
-
-          <View
-            style={
-              styles.liveBadge
-            }
-          >
-
-            <View
-              style={
-                styles.liveDot
-              }
-            />
-
-            <Text
-              style={
-                styles.liveText
-              }
-            >
-              Live Stock
-            </Text>
-
-          </View>
-
+          {cart.length > 0 && (
+            <Pressable style={styles.clearButton} onPress={clearCart}>
+              <Ionicons name="trash-outline" size={16} color="#DC2626" />
+              <Text style={styles.clearText}>Clear</Text>
+            </Pressable>
+          )}
         </View>
 
-
-        {/* =================================================
-            SEARCH
-        ================================================= */}
-
-        <View
-          style={styles.searchBox}
+        {/* BILL HISTORY */}
+        <Pressable
+          onPress={() => router.push('/bill-history')}
+          style={({ pressed }) => [
+            styles.billHistoryCard,
+            pressed && styles.billHistoryPressed,
+          ]}
         >
+          <View style={styles.billHistoryIcon}>
+            <Ionicons name="receipt-outline" size={23} color={C.primary} />
+          </View>
 
-          <Ionicons
-            name="search-outline"
-            size={19}
-            color={C.muted}
-          />
+          <View style={styles.billHistoryContent}>
+            <Text style={styles.billHistoryTitle}>Bill History</Text>
+            <Text style={styles.billHistorySubtitle}>View all generated bills</Text>
+          </View>
+
+          <View style={styles.billHistoryCountBox}>
+            <Text style={styles.billHistoryCount}>{billCount}</Text>
+            <Text style={styles.billHistoryCountLabel}>Bills</Text>
+          </View>
+
+          <View style={styles.billHistoryArrow}>
+            <Ionicons name="chevron-forward" size={18} color={C.muted} />
+          </View>
+        </Pressable>
+
+        {/* INVENTORY SECTION */}
+        <View style={styles.inventoryIntro}>
+          <View>
+            <Text style={styles.inventoryTitle}>Inventory Items</Text>
+            <Text style={styles.inventorySubtitle}>Only Live Stock can be billed.</Text>
+          </View>
+
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live Stock</Text>
+          </View>
+        </View>
+
+        {/* SEARCH */}
+        <View style={styles.searchBox}>
+          <Ionicons name="search-outline" size={19} color={C.muted} />
 
           <TextInput
             value={search}
@@ -289,391 +144,184 @@ export default function Billing() {
           />
 
           {search.length > 0 && (
-            <Pressable
-              onPress={() =>
-                setSearch('')
-              }
-              style={
-                styles.searchClear
-              }
-            >
-
-              <Ionicons
-                name="close-circle"
-                size={19}
-                color={C.muted}
-              />
-
+            <Pressable onPress={() => setSearch('')} style={styles.searchClear}>
+              <Ionicons name="close-circle" size={19} color={C.muted} />
             </Pressable>
           )}
-
         </View>
 
-
-        {/* =================================================
-            INVENTORY ITEMS
-        ================================================= */}
-
+        {/* INVENTORY ITEMS */}
         {filtered.length > 0 ? (
-
           filtered.map((item, index) => {
-
-            const live = Number(
-              item?.live || 0
-            );
-
-            const mrp = Number(
-              item?.mrp || 0
-            );
-
-            const disabled =
-              live <= 0;
-
-            const itemKey =
-              item?.id ??
-              `${item?.name || 'item'}-${index}`;
+            const live = Number(item?.live || 0);
+            const mrp = Number(item?.mrp || 0);
+            const disabled = live <= 0;
+            const itemKey = item?.id ?? `${item?.name || 'item'}-${index}`;
 
             return (
-              <View
-                key={String(itemKey)}
-                style={
-                  styles.itemCard
-                }
-              >
-
-                <View
-                  style={
-                    styles.itemRow
-                  }
-                >
-
+              <View key={String(itemKey)} style={styles.itemCard}>
+                <View style={styles.itemRow}>
                   {/* ITEM ICON */}
-
-                  <View
-                    style={[
-                      styles.itemIcon,
-                      disabled &&
-                        styles.itemIconDisabled,
-                    ]}
-                  >
-
+                  <View style={[styles.itemIcon, disabled && styles.itemIconDisabled]}>
                     <Ionicons
                       name="cube-outline"
                       size={22}
-                      color={
-                        disabled
-                          ? '#A7A2AF'
-                          : C.primary
-                      }
+                      color={disabled ? '#A7A2AF' : C.primary}
                     />
-
                   </View>
 
-
                   {/* ITEM INFORMATION */}
-
-                  <View
-                    style={
-                      styles.itemInfo
-                    }
-                  >
-
-                    <Text
-                      numberOfLines={1}
-                      style={
-                        styles.itemName
-                      }
-                    >
-                      {item?.name ||
-                        'Unnamed Item'}
+                  <View style={styles.itemInfo}>
+                    <Text numberOfLines={1} style={styles.itemName}>
+                      {item?.name || 'Unnamed Item'}
                     </Text>
 
-                    <View
-                      style={
-                        styles.itemMetaRow
-                      }
-                    >
-
-                      <Text
-                        style={
-                          styles.itemPrice
-                        }
-                      >
-                        ₹
-                        {mrp.toLocaleString(
-                          'en-IN'
-                        )}
+                    <View style={styles.itemMetaRow}>
+                      <Text style={styles.itemPrice}>
+                        ₹{mrp.toLocaleString('en-IN')}
                       </Text>
 
-                      <View
-                        style={
-                          styles.metaDot
-                        }
-                      />
+                      <View style={styles.metaDot} />
 
-                      <Text
-                        style={
-                          disabled
-                            ? styles.stockOut
-                            : styles.stockLive
-                        }
-                      >
-                        Live {live}
+                      <Text style={disabled ? styles.stockOut : styles.stockLive}>
+                        Live {live} {item?.unit || 'Pc'}
                       </Text>
-
                     </View>
 
                     {disabled && (
-                      <Text
-                        style={
-                          styles.outOfStockText
-                        }
-                      >
-                        Out of Stock
-                      </Text>
+                      <Text style={styles.outOfStockText}>Out of Stock</Text>
                     )}
-
                   </View>
 
-
                   {/* ADD BUTTON */}
-
                   <Pressable
                     disabled={disabled}
-                    onPress={() =>
-                      addToCart(item)
-                    }
+                    onPress={() => addToCart(item)}
                     style={({ pressed }) => [
                       styles.addButton,
-
-                      disabled &&
-                        styles.addButtonDisabled,
-
-                      pressed &&
-                        !disabled &&
-                        styles.addButtonPressed,
+                      disabled && styles.addButtonDisabled,
+                      pressed && !disabled && styles.addButtonPressed,
                     ]}
                   >
-
                     <Ionicons
                       name="add"
                       size={22}
-                      color={
-                        disabled
-                          ? '#AAA4B4'
-                          : '#FFFFFF'
-                      }
+                      color={disabled ? '#AAA4B4' : '#FFFFFF'}
                     />
-
                   </Pressable>
-
                 </View>
-
               </View>
             );
           })
-
         ) : (
-
-          /* =================================================
-             EMPTY INVENTORY
-          ================================================= */
-
-          <View
-            style={
-              styles.emptyCard
-            }
-          >
-
-            <View
-              style={
-                styles.emptyIcon
-              }
-            >
-
+          /* EMPTY INVENTORY */
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIcon}>
               <Ionicons
-                name={
-                  search
-                    ? 'search-outline'
-                    : 'cube-outline'
-                }
+                name={search ? 'search-outline' : 'cube-outline'}
                 size={28}
                 color={C.primary}
               />
-
             </View>
 
-            <Text
-              style={
-                styles.emptyTitle
-              }
-            >
-              {search
-                ? 'No Items Found'
-                : 'No Inventory Items'}
+            <Text style={styles.emptyTitle}>
+              {search ? 'No Items Found' : 'No Inventory Items'}
             </Text>
 
-            <Text
-              style={
-                styles.emptySubtitle
-              }
-            >
+            <Text style={styles.emptySubtitle}>
               {search
-                ? 'Try another item name or category.'
+                ? 'Try another item name, SKU, or category.'
                 : 'Admin-provided inventory items will appear here.'}
             </Text>
 
             {search.length > 0 && (
-              <Pressable
-                onPress={() =>
-                  setSearch('')
-                }
-                style={
-                  styles.clearSearchButton
-                }
-              >
-
-                <Text
-                  style={
-                    styles.clearSearchText
-                  }
-                >
-                  Clear Search
-                </Text>
-
+              <Pressable onPress={() => setSearch('')} style={styles.clearSearchButton}>
+                <Text style={styles.clearSearchText}>Clear Search</Text>
               </Pressable>
             )}
-
           </View>
-
         )}
 
-
-        {/* =================================================
-            CART BUTTON
-        ================================================= */}
-
-        <View
-          style={
-            styles.cartButtonContainer
-          }
-        >
-
+        {/* CART BUTTON */}
+        <View style={styles.cartButtonContainer}>
           <Button
             title={`View Cart (${cart.length})`}
             icon="cart-outline"
-            onPress={() =>
-              router.push('/cart')
-            }
+            onPress={() => router.push('/cart')}
           />
-
         </View>
-
       </ScrollView>
-
     </View>
   );
 }
-
 
 /* =========================================================
    STYLES
 ========================================================= */
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
     backgroundColor: C.bg,
   },
-
   scroll: {
     flex: 1,
   },
-
   contentContainer: {
     paddingHorizontal: 16,
     paddingBottom: 130,
   },
-
-  /*
-  =========================================================
-  TOP SPACING
-  =========================================================
-
-  Global hamburger exists in the tabs layout.
-  This spacing prevents Billing content from going
-  underneath it.
-  */
-
   topSpacer: {
     height: 76,
   },
 
-
-  /*
-  =========================================================
-  PAGE HEADER
-  =========================================================
-  */
-
-  pageHeader: {
+  /* HEADER */
+  topHeader: {
     minHeight: 58,
+    marginBottom: 14,
+    paddingLeft: 58, // leaves space for hamburger
+    paddingRight: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
   },
-
-  headerTextContainer: {
+  titleBlock: {
     flex: 1,
-    paddingRight: 10,
+    justifyContent: 'center',
   },
-
   pageTitle: {
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: '900',
     color: C.text,
-    letterSpacing: -0.3,
+    textAlign: 'left',
   },
-
   pageSubtitle: {
     fontSize: 11,
     color: C.muted,
-    marginTop: 4,
+    marginTop: 3,
     fontWeight: '500',
+    textAlign: 'left',
   },
-
   clearButton: {
-    height: 38,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    height: 36,
+    paddingHorizontal: 11,
+    borderRadius: 11,
     backgroundColor: '#FFF1F2',
     borderWidth: 1,
     borderColor: '#FECACA',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 8,
   },
-
-  clearButtonPressed: {
-    opacity: 0.7,
-  },
-
   clearText: {
-    color: C.red,
-    fontSize: 11,
-    fontWeight: '900',
     marginLeft: 5,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#DC2626',
   },
 
-
-  /*
-  =========================================================
-  BILL HISTORY
-  =========================================================
-  */
-
+  /* BILL HISTORY */
   billHistoryCard: {
     width: '100%',
     minHeight: 76,
@@ -687,11 +335,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 18,
   },
-
   billHistoryPressed: {
     opacity: 0.76,
   },
-
   billHistoryIcon: {
     width: 46,
     height: 46,
@@ -700,45 +346,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   billHistoryContent: {
     flex: 1,
     minWidth: 0,
     marginLeft: 11,
   },
-
   billHistoryTitle: {
     fontSize: 14,
     fontWeight: '900',
     color: C.text,
   },
-
   billHistorySubtitle: {
     fontSize: 10,
     color: C.muted,
     marginTop: 4,
   },
-
   billHistoryCountBox: {
     minWidth: 38,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 6,
   },
-
   billHistoryCount: {
     fontSize: 16,
     fontWeight: '900',
     color: C.primary,
   },
-
   billHistoryCountLabel: {
     fontSize: 8,
     color: C.muted,
     fontWeight: '700',
     marginTop: 1,
   },
-
   billHistoryArrow: {
     width: 28,
     alignItems: 'flex-end',
@@ -746,13 +385,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
-
-  /*
-  =========================================================
-  INVENTORY INTRO
-  =========================================================
-  */
-
+  /* INVENTORY INTRO */
   inventoryIntro: {
     minHeight: 58,
     backgroundColor: '#FFFFFF',
@@ -766,19 +399,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-
   inventoryTitle: {
     fontSize: 14,
     fontWeight: '900',
     color: C.text,
   },
-
   inventorySubtitle: {
     fontSize: 10,
     color: C.muted,
     marginTop: 4,
   },
-
   liveBadge: {
     height: 30,
     paddingHorizontal: 9,
@@ -789,7 +419,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-
   liveDot: {
     width: 7,
     height: 7,
@@ -797,20 +426,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#22C55E',
     marginRight: 5,
   },
-
   liveText: {
     fontSize: 9,
     color: '#15803D',
     fontWeight: '900',
   },
 
-
-  /*
-  =========================================================
-  SEARCH
-  =========================================================
-  */
-
+  /* SEARCH */
   searchBox: {
     width: '100%',
     height: 50,
@@ -823,7 +445,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginBottom: 12,
   },
-
   searchInput: {
     flex: 1,
     height: 48,
@@ -831,18 +452,11 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 13,
   },
-
   searchClear: {
     marginLeft: 5,
   },
 
-
-  /*
-  =========================================================
-  ITEM CARD
-  =========================================================
-  */
-
+  /* ITEM CARD */
   itemCard: {
     width: '100%',
     backgroundColor: '#FFFFFF',
@@ -852,13 +466,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
-
   itemRow: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
   },
-
   itemIcon: {
     width: 45,
     height: 45,
@@ -867,36 +479,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   itemIconDisabled: {
     backgroundColor: '#F0EDF4',
   },
-
   itemInfo: {
     flex: 1,
     minWidth: 0,
     marginLeft: 11,
     marginRight: 10,
   },
-
   itemName: {
     fontSize: 13,
     fontWeight: '900',
     color: C.text,
   },
-
   itemMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 5,
   },
-
   itemPrice: {
     fontSize: 10,
     color: C.text,
     fontWeight: '800',
   },
-
   metaDot: {
     width: 3,
     height: 3,
@@ -904,26 +510,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#AAA4B4',
     marginHorizontal: 6,
   },
-
   stockLive: {
     fontSize: 10,
     color: '#16A34A',
     fontWeight: '800',
   },
-
   stockOut: {
     fontSize: 10,
     color: C.red,
     fontWeight: '800',
   },
-
   outOfStockText: {
     fontSize: 9,
     color: C.red,
     fontWeight: '800',
     marginTop: 4,
   },
-
   addButton: {
     width: 40,
     height: 40,
@@ -932,77 +534,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   addButtonDisabled: {
     backgroundColor: '#F0EDF4',
   },
-
   addButtonPressed: {
     opacity: 0.72,
-    transform: [
-      {
-        scale: 0.94,
-      },
-    ],
+    transform: [{ scale: 0.94 }],
   },
 
-
-  topHeader: {
-  minHeight: 58,
-  marginBottom: 14,
-  paddingLeft: 58, // leaves space for hamburger
-  paddingRight: 4,
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-},
-
-titleBlock: {
-  flex: 1,
-  justifyContent: 'center',
-},
-
-pageTitle: {
-  fontSize: 22,
-  fontWeight: '900',
-  color: C.text,
-  textAlign: 'left',
-},
-
-pageSubtitle: {
-  fontSize: 11,
-  color: C.muted,
-  marginTop: 3,
-  fontWeight: '500',
-  textAlign: 'left',
-},
-
-clearButton: {
-  height: 36,
-  paddingHorizontal: 11,
-  borderRadius: 11,
-  backgroundColor: '#FFF1F2',
-  borderWidth: 1,
-  borderColor: '#FECACA',
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginLeft: 8,
-},
-
-clearText: {
-  marginLeft: 5,
-  fontSize: 11,
-  fontWeight: '800',
-  color: '#DC2626',
-},
-
-  /*
-  =========================================================
-  EMPTY
-  =========================================================
-  */
-
+  /* EMPTY */
   emptyCard: {
     width: '100%',
     backgroundColor: '#FFFFFF',
@@ -1013,7 +553,6 @@ clearText: {
     paddingVertical: 32,
     alignItems: 'center',
   },
-
   emptyIcon: {
     width: 60,
     height: 60,
@@ -1023,13 +562,11 @@ clearText: {
     justifyContent: 'center',
     marginBottom: 12,
   },
-
   emptyTitle: {
     fontSize: 15,
     fontWeight: '900',
     color: C.text,
   },
-
   emptySubtitle: {
     fontSize: 10,
     color: C.muted,
@@ -1037,7 +574,6 @@ clearText: {
     lineHeight: 17,
     marginTop: 5,
   },
-
   clearSearchButton: {
     marginTop: 15,
     paddingHorizontal: 14,
@@ -1045,23 +581,15 @@ clearText: {
     borderRadius: 11,
     backgroundColor: C.primarySoft,
   },
-
   clearSearchText: {
     color: C.primary,
     fontSize: 10,
     fontWeight: '900',
   },
 
-
-  /*
-  =========================================================
-  CART
-  =========================================================
-  */
-
+  /* CART */
   cartButtonContainer: {
     marginTop: 7,
     marginBottom: 10,
   },
-
 });

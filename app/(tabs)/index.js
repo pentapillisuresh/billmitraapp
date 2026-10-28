@@ -318,7 +318,7 @@ export default function Dashboard() {
         </View>
 
         <View style={styles.actionsGrid}>
-          <Action icon="receipt-outline" label="New Bill" path="/(tabs)/billing" color="#7C3AED" bgColor="#EDE9FE" />
+          <Action icon="receipt-outline" label="New Bil" path="/(tabs)/billing" color="#7C3AED" bgColor="#EDE9FE" />
           <Action icon="cube-outline" label="Inventory" path="/(tabs)/inventory" color="#3B82F6" bgColor="#DBEAFE" />
           <Action icon="swap-horizontal-outline" label="Transfer Stock" path="/transfer-stock" color="#10B981" bgColor="#D1FAE5" />
           <Action icon="bar-chart-outline" label="Reports" path="/(tabs)/reports" color="#D97706" bgColor="#FEF3C7" />
