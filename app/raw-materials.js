@@ -1,47 +1,21 @@
-import React, { useMemo, useState } from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  TextInput,
-  StyleSheet,
-} from 'react-native';
-
-import {
-  router,
-} from 'expo-router';
-
-import {
-  Ionicons,
-} from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-  Button,
-} from '../components/ui';
-
+import React, { useCallback, useMemo, useState } from 'react';
+import { ScrollView, Text, View, Pressable, TextInput, StyleSheet } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Header, Card, Button } from '../components/ui';
 import { C } from '../constants/colors';
-
-import {
-  useApp,
-} from '../context/AppContext';
+import { useApp } from '../context/AppContext';
 
 
 export default function RawMaterials() {
+ const { rawMaterials, usageHistory,refreshData} = useApp();
+  const [ search, setSearch] = useState('');
 
-  const {
-    rawMaterials,
-    usageHistory,
-  } = useApp();
-
-  const [
-    search,
-    setSearch,
-  ] = useState('');
-
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
   const filteredMaterials =
     useMemo(() => {
@@ -68,13 +42,15 @@ export default function RawMaterials() {
     ]);
 
 
-  const today =
-    usageHistory.filter(
-      item =>
-        item.date ===
-        '05 Oct 2026'
+    const currentDate = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    
+    const today = usageHistory.filter(
+      item => item.date === currentDate
     );
-
 
   const todayExpense =
     today.reduce(
@@ -413,7 +389,7 @@ export default function RawMaterials() {
                     styles.materialMeta
                   }
                 >
-                  {item.unit} · ₹
+                  {item.unit} : {item.quantity} · ₹
                   {item.unitCost}
                   / {item.unit}
                 </Text>

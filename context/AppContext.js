@@ -11,6 +11,7 @@ import { Alert } from 'react-native';
 import { getUser } from '../utils/storage';
 import { getAllProducts, updateStock } from '../service/outletProductService';
 import { createSale, approveSale, getAllSales } from '../service/saleService';
+import { createRawMaterialUsage } from '../service/rawMaterialUsageService';
 
 const AppContext = createContext(null);
 
@@ -45,14 +46,15 @@ export function AppProvider({ children }) {
       });
 
       const mappedInventory = invRes.data
-        .filter((p) => p.type === 'inventory' || !p.type)
+        .filter((p) => p.productType === 'inventory' || !p.productType)
         .map((p) => ({
           ...p,
-          live: Number(p.quantity),
-          reserve: 0,
+          quantity: Number(p.quantity),
+          live: Number(p.liveStock),
+          reserve: Number(p.reservedStock),
           min: Number(p.thresholdQuantity),
           mrp: Number(p.price),
-          gst: Number(p.IGST || 0) + Number(p.SGST || 0) + Number(p.CGST || 0),
+          gst: Number(p.SGST || 0) + Number(p.CGST || 0),
           unit: p.units || 'Pc',
         }));
       setInventory(mappedInventory);
@@ -64,7 +66,7 @@ export function AppProvider({ children }) {
         limit: 100,
       });
       const mappedRaw = rawRes.data
-        .filter((p) => p.type === 'raw_material')
+        .filter((p) => p.productType === 'raw_material')
         .map((p) => ({
           ...p,
           unitCost: Number(p.costPrice || p.price || 0),
@@ -142,21 +144,19 @@ export function AppProvider({ children }) {
   // =========================================================
   // TRANSFER INVENTORY
   // =========================================================
-  const transferInventory = async (id, qty) => {
-    const quantity = Math.max(0, Number(qty) || 0);
-    if (quantity <= 0 || !user?.id) return false;
+  const transferInventory = async (id, live, reserve) => {
 
     try {
-      await updateStock(id, quantity, 'increment');
-      
+      await updateStock(id,live,reserve);
+
       setInventory((prev) =>
         prev.map((item) =>
           String(item.id) === String(id)
-            ? { ...item, live: item.live + quantity }
+            ? { ...item, live: item.live + live }
             : item
         )
       );
-      return true;
+      return false;
     } catch (error) {
       Alert.alert('Transfer Failed', error.message);
       return false;
@@ -184,52 +184,82 @@ export function AppProvider({ children }) {
   // =========================================================
   const addRawMaterialUsage = async ({ materialId, qty, type = 'Given to Cook', remarks = '', date }) => {
     const quantity = Number(qty) || 0;
+    
+    // 1. Basic Validation
     if (quantity <= 0) {
       Alert.alert('Enter Quantity', 'Usage quantity must be greater than zero.');
       return false;
     }
-
+  
     const material = rawMaterials.find((x) => String(x.id) === String(materialId));
     if (!material) {
       Alert.alert('Material Not Found', 'Please select a valid raw material.');
       return false;
     }
-
+  
     try {
-      await updateStock(material.id, quantity, 'decrement');
-
+      const user = await getUser();
+      if (!user?.id) {
+        Alert.alert('Error', 'User session expired. Please log in again.');
+        return false;
+      }
+  
+      // 2. Call the new backend API 
+      // (Backend handles the check, transaction, and stock deduction)
+      const rawMaterialUsage= {
+        outletProductId: material.id,
+        quantityUsed: quantity,
+        usageType: type,
+        remarks: remarks,
+        date: date || new Date(),
+        outletId: user.id,
+        createdBy: user.id,
+      };
+      createRawMaterialUsage(rawMaterialUsage);
+      // 3. Update local rawMaterials state (optimistic UI update)
+      // Deduct from both 'quantity' and 'liveStock' in local state
       setRawMaterials((prev) =>
         prev.map((m) =>
           String(m.id) === String(materialId)
-            ? { ...m, quantity: Math.max(0, m.quantity - quantity) }
+            ? { 
+                ...m, 
+                quantity: Math.max(0, (Number(m.quantity) || 0) - quantity),
+                liveStock: Math.max(0, (Number(m.liveStock) || 0) - quantity) 
+              }
             : m
         )
       );
-
-      const totalCost = quantity * Number(material.unitCost || 0);
+  
+      // 4. Add to local usageHistory for immediate UI update
+      const unitCost = Number(material.unitCost || material.costPrice || 0);
+      const totalCost = quantity * unitCost;
       const now = new Date();
+      
       const newUsage = {
-        id: `U${Date.now()}`,
+        id: `U${Date.now()}`, // Temporary local ID for UI key
         materialId: material.id,
         material: material.name,
         qty: quantity,
-        unit: material.unit,
+        unit: material.unit || material.units || 'Unit',
         type,
         date: date || now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
         time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         remarks,
-        unitCost: material.unitCost,
+        unitCost: unitCost,
         cost: totalCost,
       };
-
+  
       setUsageHistory((prev) => [newUsage, ...prev]);
+      
       return true;
     } catch (error) {
-      Alert.alert('Usage Failed', error.message);
+      // The backend will return an error message if stock is insufficient
+      console.error("Usage Error:", error);
+      Alert.alert('Usage Failed', error.response?.data?.message || error.message);
       return false;
     }
   };
-
+  
   const useRawMaterial = (id, qty, type, remarks) => {
     return addRawMaterialUsage({ materialId: id, qty, type, remarks });
   };
@@ -237,30 +267,37 @@ export function AppProvider({ children }) {
   // =========================================================
   // FINALIZE BILL
   // =========================================================
+
   const finalizeBill = async (billData) => {
     if (!cart.length) return { success: false, message: 'Cart is empty.' };
     if (!user?.id) return { success: false, message: 'User not logged in.' };
 
     try {
+      // Build payload matching backend Sale model requirements
       const salePayload = {
         outletId: user.id,
-        state: user.address || 'Default State',
+        state: billData.state || user.address || 'Default State',
         customerName: billData.customerName || 'Walk-in Customer',
+        customerPhone: billData.customerPhone || '',
+        customerAddress: billData.customerAddress || '',
         createdBy: user.id,
-        discount: billData.discount || 0,
+        discount: Number(billData.discountValue) || 0, // Backend needs absolute discount amount
         items: cart.map((c) => ({
           outletProductId: c.id,
           quantity: c.qty,
-          unitPrice: c.mrp,
+          unitPrice: c.mrp, // Unit price is sent, backend calculates subtotal/tax
         })),
       };
 
+      // 1. Create the Sale
       const createRes = await createSale(salePayload);
 
+      // 2. Auto-Approve the Sale to deduct stock
       if (createRes?.data?.id) {
         await approveSale(createRes.data.id, user.id);
       }
 
+      // 3. Construct local bill object for UI receipt
       const savedBill = {
         ...billData,
         id: createRes.data.invoiceNumber || `B${Date.now()}`,
@@ -269,14 +306,18 @@ export function AppProvider({ children }) {
         createdAt: new Date().toISOString(),
       };
 
+      // 4. Update local state
       setBills((prev) => [savedBill, ...prev]);
       setCart([]);
+
+      // 5. Refresh inventory to get updated stock from backend
       fetchData();
 
       return { success: true, bill: savedBill };
     } catch (error) {
+      console.error('Billing failed:', error);
       Alert.alert('Billing Failed', error.response?.data?.message || error.message);
-      return { success: false, message: error.message };
+      return { success: false, message: error.response?.data?.message || error.message };
     }
   };
 

@@ -1,29 +1,21 @@
-import React from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-} from 'react-native';
-
-import { router } from 'expo-router';
+import React, { useCallback } from 'react';
+import {ScrollView,Text,View,Pressable} from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-  StatusBadge,
-} from '../components/ui';
-
+import {Header,Card,StatusBadge} from '../components/ui';
 import { C } from '../constants/colors';
 import { useApp } from '../context/AppContext';
 import { safeBack } from '../utils/navigation';
 
 export default function LowStock() {
 
-  const { inventory } =
-    useApp();
+  const { inventory,refreshData } = useApp();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
   const lowItems =
     inventory.filter(

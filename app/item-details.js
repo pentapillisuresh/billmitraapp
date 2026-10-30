@@ -41,7 +41,7 @@ export default function ItemDetails() {
         String(id)
     );
 
-  if (!item) {
+    if (!item) {
 
     return (
       <View
@@ -105,14 +105,11 @@ export default function ItemDetails() {
     );
   }
 
-  const reserve =
-    Number(item.reserve || 0);
+  const reserve =  Number(item.reservedStock || 0);
 
-  const live =
-    Number(item.live || 0);
+  const live = Number(item.liveStock || 0);
 
-  const total =
-    reserve + live;
+  const total =  reserve + live;
 
   return (
     <ScrollView
@@ -194,7 +191,7 @@ export default function ItemDetails() {
                   marginTop: 4,
                 }}
               >
-                {item.category} • {item.unit}
+                {item.categoryName} • {item.unit}
               </Text>
 
             </View>
@@ -245,7 +242,7 @@ export default function ItemDetails() {
 
           <Info
             label="Category"
-            value={item.category}
+            value={item.categoryName}
           />
 
           <Info
@@ -260,7 +257,7 @@ export default function ItemDetails() {
 
           <Info
             label="GST"
-            value={`${item.gst}%`}
+            value={`${parseFloat(item.CGST) +parseFloat(item.SGST)}%`}
           />
 
           <Info

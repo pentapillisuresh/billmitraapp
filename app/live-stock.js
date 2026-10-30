@@ -1,35 +1,24 @@
-import React, {
-  useMemo,
-  useState,
-} from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  TextInput,
-} from 'react-native';
-
-import { router } from 'expo-router';
+import React, {useCallback, useMemo,useState, } from 'react';  
+import {ScrollView,Text,View,Pressable,TextInput } from 'react-native';  
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-} from '../components/ui';
-
+import {Header,Card} from '../components/ui';
 import { C } from '../constants/colors';
 import { useApp } from '../context/AppContext';
 import { safeBack } from '../utils/navigation';
 
 export default function LiveStock() {
 
-  const { inventory } =
-    useApp();
+  const { inventory,refreshData } = useApp();
 
-  const [search, setSearch] =
-    useState('');
+  const [search, setSearch] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
+
 
   const filtered =
     useMemo(

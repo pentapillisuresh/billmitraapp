@@ -1,82 +1,24 @@
 import React from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  StyleSheet,
-} from 'react-native';
-
-import {
-  useLocalSearchParams,
-  router,
-} from 'expo-router';
-
-import {
-  Ionicons,
-} from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-  Button,
-} from '../components/ui';
-
+import {ScrollView,Text,View,Pressable,StyleSheet} from 'react-native';
+import {useLocalSearchParams,router} from 'expo-router';
+import {Ionicons} from '@expo/vector-icons';
+import {Header,Card,Button} from '../components/ui';
 import { C } from '../constants/colors';
-
-import {
-  useApp,
-} from '../context/AppContext';
+import {useApp} from '../context/AppContext';
 
 
 export default function RawDetails() {
 
-  const {
-    id,
-  } = useLocalSearchParams();
+  const { id } = useLocalSearchParams();
+  console.log("ID::",id)
+  const { rawMaterials, usageHistory} = useApp();
 
+  const item = rawMaterials.find(   x => x.id === Number(id) ) || rawMaterials[0];
 
-  const {
-    rawMaterials,
-    usageHistory,
-  } = useApp();
+  if (!item) { return null }
 
-
-  const item =
-    rawMaterials.find(
-      x => x.id === id
-    ) ||
-    rawMaterials[0];
-
-
-  if (!item) {
-    return null;
-  }
-
-
-  const materialUsage =
-    usageHistory.filter(
-      x =>
-        x.materialId ===
-        item.id
-    );
-
-
-  const totalExpense =
-    materialUsage.reduce(
-      (sum, x) =>
-        sum + Number(x.cost || 0),
-      0
-    );
-
-
-  const totalQty =
-    materialUsage.reduce(
-      (sum, x) =>
-        sum + Number(x.qty || 0),
-      0
-    );
+  const materialUsage = usageHistory.filter(  x => x.materialId === item.id);
+  const totalQty = materialUsage.reduce( (sum, x) => sum + Number(x.qty || 0), 0 );
 
 
   return (
@@ -145,7 +87,7 @@ export default function RawDetails() {
               styles.heroUnit
             }
           >
-            {item.unit} · ₹
+            {item.quantity}  {item.unit} · ₹
             {item.unitCost}
             / {item.unit}
           </Text>
@@ -162,9 +104,7 @@ export default function RawDetails() {
         >
 
           <View
-            style={
-              styles.statCard
-            }
+            style={ [styles.statCard,styles.statsRow] }
           >
 
             <Ionicons
@@ -198,40 +138,6 @@ export default function RawDetails() {
             </Text>
 
           </View>
-
-
-          <View
-            style={
-              styles.statCard
-            }
-          >
-
-            <Ionicons
-              name="wallet-outline"
-              size={19}
-              color="#DB2777"
-            />
-
-            <Text
-              style={
-                styles.statLabel
-              }
-            >
-              Total Expense
-            </Text>
-
-            <Text
-              style={
-                styles.statValue
-              }
-            >
-              ₹{totalExpense.toLocaleString(
-                'en-IN'
-              )}
-            </Text>
-
-          </View>
-
         </View>
 
 
@@ -460,7 +366,7 @@ const styles = StyleSheet.create({
 
   statCard: {
     flex: 1,
-    minHeight: 112,
+    minHeight: 52,
     padding: 13,
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
@@ -469,23 +375,22 @@ const styles = StyleSheet.create({
   },
 
   statLabel: {
-    marginTop: 9,
+    marginTop: 5,
     fontSize: 10,
     color: C.muted,
     fontWeight: '700',
   },
 
   statValue: {
-    marginTop: 3,
     fontSize: 19,
     fontWeight: '900',
     color: C.text,
   },
 
   statUnit: {
-    fontSize: 9,
+    fontSize: 12,
     color: C.muted,
-    marginTop: 1,
+    marginTop:4,
   },
 
   sectionTitle: {
