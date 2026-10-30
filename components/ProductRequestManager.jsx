@@ -1,38 +1,28 @@
-
-import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  Pressable,
-  StyleSheet,
-  Alert,
-  Modal,
-  RefreshControl,
-} from 'react-native';
-import {
-  router,
-  useFocusEffect,
-  useLocalSearchParams,
-} from 'expo-router';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import {View,Text,TextInput,ScrollView,Pressable,StyleSheet,Alert,Modal,RefreshControl,ActivityIndicator} from 'react-native';
+import {router,useFocusEffect,useLocalSearchParams} from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getUser } from '../utils/storage';
 
+// ⚠️ UPDATE THIS TO YOUR BACKEND URL
+const API_BASE_URL = 'http://localhost:5001/api';
+
+// Keeping mock data imports for the other modes (add, products, details)
 import {
   STORES,
   getStoreById,
   getProductsByStore,
-  getRequests,
-  getRequestById,
-  getStats,
-  getTotalQuantity,
-  getTotalAmount,
   formatMoney,
   formatDate,
   createRequest,
   getAvailableStock,
+  getTotalQuantity,
+  getTotalAmount,
 } from '../data/productRequestData';
+import { createStockRequest, getAdminDashboardData, getAllStockRequests, getStockRequestById } from '../service/stockRequestService';
+import { getOutletsByPhoneNumber, getOutletStoreInventory } from '../service/outlet';
+import { requestAmount } from '../context/ProductRequestContext';
 
 const ORANGE = '#FE9900';
 const BG = '#F7F8FA';
@@ -42,24 +32,23 @@ const BORDER = '#E8E9ED';
 const GREEN = '#15803D';
 const RED = '#DC2626';
 const AMBER = '#D97706';
+const BLUE = '#2563EB';
 
 const STATUS_COLORS = {
+  pending: AMBER,
+  approved: GREEN,
+  partially_approved: BLUE,
+  completed: GREEN,
+  rejected: RED,
+  // Fallbacks
   Pending: AMBER,
   Approved: GREEN,
   Rejected: RED,
 };
 
-function IconButton({
-  name,
-  onPress,
-  color = TEXT,
-  background = '#F2F3F5',
-}) {
+function IconButton({ name, onPress, color = TEXT, background = '#F2F3F5' }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[s.iconButton, { backgroundColor: background }]}
-    >
+    <Pressable onPress={onPress} style={[s.iconButton, { backgroundColor: background }]}>
       <Ionicons name={name} size={20} color={color} />
     </Pressable>
   );
@@ -72,9 +61,7 @@ function PageHeader({ title, subtitle, back = false, action }) {
         <IconButton
           name="arrow-back"
           onPress={() =>
-            router.canGoBack()
-              ? router.back()
-              : router.replace('/product-requests')
+            router.canGoBack() ? router.back() : router.replace('/product-requests')
           }
         />
       )}
@@ -90,18 +77,9 @@ function PageHeader({ title, subtitle, back = false, action }) {
   );
 }
 
-function PrimaryButton({
-  title,
-  onPress,
-  disabled = false,
-  icon = 'arrow-forward-outline',
-}) {
+function PrimaryButton({ title, onPress, disabled = false, icon = 'arrow-forward-outline' }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[s.primaryButton, disabled && { opacity: 0.45 }]}
-    >
+    <Pressable onPress={onPress} disabled={disabled} style={[s.primaryButton, disabled && { opacity: 0.45 }]}>
       <Ionicons name={icon} size={19} color="#FFFFFF" />
       <Text style={s.primaryText}>{title}</Text>
     </Pressable>
@@ -109,12 +87,16 @@ function PrimaryButton({
 }
 
 function StatusBadge({ status }) {
-  const color = STATUS_COLORS[status] || MUTED;
+  const normalized = status ? status.toLowerCase() : 'pending';
+  const color = STATUS_COLORS[normalized] || MUTED;
+  
+  const display = normalized === 'partially_approved' ? 'Awaiting Payment' 
+    : normalized.charAt(0).toUpperCase() + normalized.slice(1);
 
   return (
     <View style={[s.badge, { backgroundColor: `${color}16` }]}>
       <View style={[s.badgeDot, { backgroundColor: color }]} />
-      <Text style={[s.badgeText, { color }]}>{status}</Text>
+      <Text style={[s.badgeText, { color }]}>{display}</Text>
     </View>
   );
 }
@@ -149,7 +131,14 @@ function SummaryRow({ label, value, strong = false }) {
   );
 }
 
+// 🆕 Updated RequestCard to match API data structure
 function RequestCard({ request }) {
+  // Calculate approval progress from the items array
+  const totalProducts = request.items?.length || 0;
+  const approvedProducts = request.items?.filter(
+    (i) => i.status === 'approved' || i.status === 'partially_approved'
+  ).length || 0;
+
   return (
     <Pressable
       style={s.requestCard}
@@ -162,45 +151,29 @@ function RequestCard({ request }) {
     >
       <View style={s.spaceBetween}>
         <View style={{ flex: 1 }}>
-          <Text style={s.requestId}>{request.id}</Text>
-          <Text style={s.muted}>{request.storeName}</Text>
+          {/* Using requestNumber from backend */}
+          <Text style={s.requestId}>{request.requestNumber || `REQ-${request.id}`}</Text>
+          {/* Fallback to Outlet ID if Store name is not joined */}
+          <Text style={s.muted}>Outlet ID: {request.outletId}</Text>
         </View>
         <StatusBadge status={request.status} />
       </View>
 
       <View style={s.line} />
 
-      <Text style={s.sectionLabel}>PRODUCTS</Text>
-
-      {request.items.map((item, index) => (
-        <View key={`${item.productId}-${index}`} style={s.spaceBetween}>
-          <Text style={s.productLine}>
-            {item.name} × {item.quantity} {item.unit}
-          </Text>
-          <Text style={s.productLineAmount}>
-            {formatMoney(item.price * item.quantity)}
-          </Text>
-        </View>
-      ))}
-
-      <View style={s.line} />
-
       <View style={s.spaceBetween}>
         <View>
-          <Text style={s.muted}>Total Quantity</Text>
-          <Text style={s.value}>{getTotalQuantity(request)}</Text>
+          <Text style={s.muted}>Approval Progress</Text>
+          <Text style={s.value}>{approvedProducts}/{totalProducts} Approved</Text>
         </View>
-
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={s.muted}>Total Amount</Text>
-          <Text style={s.orangeValue}>
-            {formatMoney(getTotalAmount(request))}
-          </Text>
+          <Text style={s.orangeValue}>{formatMoney(Number(request.totalAmount || 0))}</Text>
         </View>
       </View>
 
       <View style={[s.spaceBetween, { marginTop: 13 }]}>
-        <Text style={s.muted}>{formatDate(request.date)}</Text>
+        <Text style={s.muted}>{formatDate(request.createdAt)}</Text>
         <View style={s.viewDetails}>
           <Text style={s.viewDetailsText}>View Details</Text>
           <Ionicons name="chevron-forward" size={16} color={ORANGE} />
@@ -210,43 +183,69 @@ function RequestCard({ request }) {
   );
 }
 
+// 🆕 Updated Dashboard to fetch from API
 function Dashboard() {
   const [requests, setRequests] = useState([]);
-  const [stats, setStats] = useState(getStats());
+  const [summary, setSummary] = useState({
+    totalRequests: 0,
+    pendingApproval: 0,
+    awaitingPayment: 0,
+    completed: 0,
+    outstandingValue: 0, 
+  });
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const reload = useCallback(() => {
-    setRequests(getRequests());
-    setStats(getStats());
-  }, []);
+  const fetchDashboardData = async () => {
+    const user=await getUser();
+    try {
+      // Fetching from the admin dashboard endpoint we built
+      const response = await getAdminDashboardData({outletId:user.id});
+      console.log("USER::",response)
+
+      if (response.success) {
+        setRequests(response.requests);
+        setSummary(response.summary);
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+      Alert.alert('Error', 'Failed to fetch dashboard data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
-      reload();
-    }, [reload])
+      fetchDashboardData();
+    }, [])
   );
 
   const refresh = () => {
     setRefreshing(true);
-    reload();
-    setRefreshing(false);
+    fetchDashboardData();
   };
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={ORANGE} />
+        <Text style={{ marginTop: 12, color: MUTED }}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
       contentContainerStyle={s.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-      }
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
       <PageHeader
         title="Request Dashboard"
         subtitle="Manage all store product requests"
         action={
-          <Pressable
-            style={s.newButton}
-            onPress={() => router.push('/product-requests/add')}
-          >
+          <Pressable style={s.newButton} onPress={() => router.push('/product-requests/add')}>
             <Ionicons name="add" size={20} color="#FFFFFF" />
             <Text style={s.newButtonText}>New</Text>
           </Pressable>
@@ -254,30 +253,21 @@ function Dashboard() {
       />
 
       <View style={s.metricsGrid}>
-        <Metric
-          label="Total Requests"
-          value={stats.total}
-          icon="documents-outline"
-          color={ORANGE}
-        />
-        <Metric
-          label="Pending"
-          value={stats.pending}
-          icon="time-outline"
-          color={AMBER}
-        />
-        <Metric
-          label="Approved"
-          value={stats.approved}
-          icon="checkmark-circle-outline"
-          color={GREEN}
-        />
-        <Metric
-          label="Rejected"
-          value={stats.rejected}
-          icon="close-circle-outline"
-          color={RED}
-        />
+        <Metric label="Total Requests" value={summary.totalRequests} icon="documents-outline" color={ORANGE} />
+        <Metric label="Pending Approval" value={summary.pendingApproval} icon="time-outline" color={AMBER} />
+        <Metric label="Awaiting Payment" value={summary.awaitingPayment} icon="card-outline" color={BLUE} />
+        <Metric label="Completed" value={summary.completed} icon="checkmark-circle-outline" color={GREEN} />
+      </View>
+
+      {/* Outstanding Value Banner */}
+      <View style={[s.card, { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}>
+        <View style={[s.metricIcon, { backgroundColor: '#E0F2FE' }]}>
+          <Ionicons name="cash-outline" size={21} color={BLUE} />
+        </View>
+        <View>
+          <Text style={s.muted}>Outstanding Request Value</Text>
+          <Text style={[s.value, { fontSize: 16, marginTop: 2 }]}>{formatMoney(summary.outstandingValue)}</Text>
+        </View>
       </View>
 
       <View style={s.spaceBetween}>
@@ -288,7 +278,7 @@ function Dashboard() {
       </View>
 
       {requests.length ? (
-        requests.slice(0, 10).map(item => (
+        requests.slice(0, 10).map((item) => (
           <RequestCard key={item.id} request={item} />
         ))
       ) : (
@@ -301,8 +291,46 @@ function Dashboard() {
 function StoreSelection() {
   const [visible, setVisible] = useState(true);
   const [selectedStore, setSelectedStore] = useState(null);
+  
+  // 🆕 API States
+  const [outlets, setOutlets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const proceed = store => {
+  // 🆕 Fetch Outlets by Phone Number
+  useEffect(() => {
+    const fetchOutlets = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const user = await getUser();
+        
+        if (!user?.phoneNumber) {
+          setError('User phone number not found. Please update your profile.');
+          setLoading(false);
+          return;
+        }
+
+        // Call the API we created
+        const response = await getOutletsByPhoneNumber(user?.phoneNumber);
+        if (response.success) {
+          setOutlets(response.data);
+        } else {
+          setError('No outlets found.');
+        }
+      } catch (err) {
+        console.error('Failed to fetch outlets:', err);
+        setError(err.response?.data?.message || 'Failed to load stores. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOutlets();
+  }, []);
+
+  const proceed = (outlet) => {
+    const store = outlet.Store;
     if (!store?.id) {
       Alert.alert('Store Error', 'This store does not have a valid ID.');
       return;
@@ -310,93 +338,79 @@ function StoreSelection() {
 
     setSelectedStore(store);
     setVisible(false);
-
     router.push({
       pathname: '/product-requests/select-products',
-      params: { storeId: String(store.id) },
+      params: { storeId: String(store.id) }, // Passing storeId to the next screen
     });
   };
 
   return (
     <View style={{ flex: 1 }}>
       <View style={s.content}>
-        <PageHeader
-          title="Add Product Request"
-          subtitle="Select a store to start requesting products."
-          back
-        />
+        <PageHeader title="Add Product Request" subtitle="Select a store to start requesting products." back />
 
         <View style={s.emptyCard}>
           <Ionicons name="storefront-outline" size={46} color={ORANGE} />
-
-          <Text style={s.emptyTitle}>
-            {selectedStore ? selectedStore.name : 'Choose a Store'}
-          </Text>
-
-          <Text style={s.muted}>
-            Select the store whose available stock you want to request.
-          </Text>
-
-          <PrimaryButton
-            title="Select Store"
-            icon="storefront-outline"
-            onPress={() => setVisible(true)}
-          />
+          <Text style={s.emptyTitle}>{selectedStore ? selectedStore.name : 'Choose a Store'}</Text>
+          <Text style={s.muted}>Select the store whose available stock you want to request.</Text>
+          <PrimaryButton title="Select Store" icon="storefront-outline" onPress={() => setVisible(true)} />
         </View>
       </View>
 
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setVisible(false)}
-      >
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
         <View style={s.overlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setVisible(false)}
-          />
-
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
           <View style={s.sheet}>
             <View style={s.handle} />
-
+            
             <View style={s.spaceBetween}>
               <View>
                 <Text style={s.sheetTitle}>Select Store</Text>
                 <Text style={s.muted}>Choose from available stores</Text>
               </View>
-              <IconButton
-                name="close"
-                onPress={() => setVisible(false)}
-              />
+              <IconButton name="close" onPress={() => setVisible(false)} />
             </View>
 
-            {STORES.map(store => (
-              <Pressable
-                key={store.id}
-                style={s.storeCard}
-                onPress={() => proceed(store)}
-              >
-                <View style={s.storeIcon}>
-                  <Ionicons
-                    name="storefront-outline"
-                    size={23}
-                    color={ORANGE}
-                  />
-                </View>
+            {/* 🆕 Loading State */}
+            {loading ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={ORANGE} />
+                <Text style={[s.muted, { marginTop: 12 }]}>Fetching your outlets...</Text>
+              </View>
+            ) : error ? (
+              /* 🆕 Error State */
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Ionicons name="alert-circle-outline" size={40} color="#DC2626" />
+                <Text style={[s.muted, { marginTop: 12, color: '#DC2626', textAlign: 'center' }]}>
+                  {error}
+                </Text>
+              </View>
+            ) : outlets.length === 0 ? (
+              /* 🆕 Empty State */
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Ionicons name="storefront-outline" size={40} color={MUTED} />
+                <Text style={[s.muted, { marginTop: 12 }]}>No outlets found for your number.</Text>
+              </View>
+            ) : (
+              /* 🆕 Populated State */
+              outlets.map((outlet) => {
+                const store = outlet.Store;
+                if (!store) return null; // Skip if store details are missing
 
-                <View style={{ flex: 1 }}>
-                  <Text style={s.storeName}>{store.name}</Text>
-                  <Text style={s.muted}>{store.location}</Text>
-                </View>
-
-                <Ionicons
-                  name="chevron-forward"
-                  size={19}
-                  color={MUTED}
-                />
-              </Pressable>
-            ))}
+                return (
+                  <Pressable key={outlet.id} style={s.storeCard} onPress={() => proceed(outlet)}>
+                    <View style={s.storeIcon}>
+                      <Ionicons name="storefront-outline" size={23} color={ORANGE} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.storeName}>{store.name}</Text>
+                      <Text style={s.muted}>{store.location || store.address || 'No location provided'}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={19} color={MUTED} />
+                  </Pressable>
+                );
+              })
+            )}
           </View>
         </View>
       </Modal>
@@ -406,28 +420,64 @@ function StoreSelection() {
 
 function ProductSelection() {
   const params = useLocalSearchParams();
-
-  const storeId = String(
-    Array.isArray(params.storeId)
-      ? params.storeId[0] || ''
-      : params.storeId || ''
-  ).trim();
-
-  const store = getStoreById(storeId);
-
+  const storeId = String(Array.isArray(params.storeId) ? params.storeId[0] : params.storeId || '').trim();
+  
+  // States
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [notes, setNotes] = useState('');
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // We need the store name for the UI, which we can grab from the first product's nested store object
+  const [storeName, setStoreName] = useState('Store');
 
-  const reload = useCallback(() => {
-    if (!storeId || !getStoreById(storeId)) {
+  // =========================================================
+  // 1. FETCH STORE INVENTORY
+  // =========================================================
+  const reload = useCallback(async () => {
+    if (!storeId) {
       setProducts([]);
+      setLoading(false);
       return;
     }
+    
+    try {
+      setLoading(true);
+      // Call your new route: /inventory/outlet/store/:storeId
+      const response = await getOutletStoreInventory(storeId);
 
-    setProducts(getProductsByStore(storeId));
+      // Map the backend Inventory model + Product model to what the UI expects
+      const mappedProducts = response.map((inv) => {
+        // Fallback to empty object if Product is missing
+        const prod = inv.Product || {}; 
+        
+        return {
+          id: prod.id || inv.productId, // Using Product ID for the request
+          inventoryId: inv.id,           // Keep inventory ID just in case
+          name: prod.name || 'Unknown Product',
+          sku: prod.sku || 'N/A',
+          price: Number(prod.price) || 0,
+          unit: prod.units || 'Pc',
+          available: Number(inv.quantity) || 0, // Stock comes from Inventory.quantity
+        };
+      });
+
+      setProducts(mappedProducts);
+
+      // Set the store name from the nested store relation (if available)
+      if (response.length > 0 && response[0].store) {
+        setStoreName(response[0].store.name);
+      }
+    } catch (error) {
+      console.error('Failed to fetch store inventory:', error);
+      Alert.alert('Error', 'Failed to load store products.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [storeId]);
 
   useFocusEffect(
@@ -439,168 +489,139 @@ function ProductSelection() {
   const refresh = () => {
     setRefreshing(true);
     reload();
-    setRefreshing(false);
   };
 
   const visibleProducts = useMemo(
-    () =>
-      products.filter(product =>
-        `${product.name} ${product.sku}`
-          .toLowerCase()
-          .includes(search.toLowerCase())
-      ),
+    () => products.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())),
     [products, search]
   );
 
   const selectedItems = products
-    .filter(product => Number(quantities[product.id]) > 0)
-    .map(product => ({
-      ...product,
-      quantity: Number(quantities[product.id]),
-    }));
+    .filter((product) => Number(quantities[product.id]) > 0)
+    .map((product) => ({ ...product, quantity: Number(quantities[product.id]) }));
 
-  const totalQuantity = selectedItems.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  );
+  const totalQuantity = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalAmount = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const totalAmount = selectedItems.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
-
+  // =========================================================
+  // 2. QUANTITY LOGIC (Strictly bound: 0 to Available)
+  // =========================================================
   const changeQuantity = (product, value) => {
+    // Only allow numbers
     if (value !== '' && !/^\d+$/.test(value)) return;
+    
+    let newValue = value;
+    const maxAvailable = product.available;
 
-    const currentAvailable = getAvailableStock(product.id);
-
-    if (value && Number(value) > currentAvailable) {
-      Alert.alert(
-        'Insufficient stock',
-        `Only ${currentAvailable} ${product.unit} available for ${product.name}.`
-      );
-
-      setQuantities(previous => ({
-        ...previous,
-        [product.id]: String(currentAvailable || ''),
-      }));
-
-      reload();
-      return;
+    // Prevent entering more than available
+    if (value !== '' && Number(value) > maxAvailable) {
+      Alert.alert('Insufficient Stock', `Only ${maxAvailable} ${product.unit} available for ${product.name}.`);
+      newValue = String(maxAvailable);
     }
 
-    setQuantities(previous => ({
-      ...previous,
-      [product.id]: value,
-    }));
+    setQuantities((prev) => ({ ...prev, [product.id]: newValue }));
   };
 
   const stepQuantity = (product, step) => {
-    const max = getAvailableStock(product.id);
+    const max = product.available;
     const current = Number(quantities[product.id]) || 0;
+    
+    // Math.max(0, ...) ensures it never goes below 0
+    // Math.min(max, ...) ensures it never goes above available
     const next = Math.max(0, Math.min(max, current + step));
-
-    setQuantities(previous => ({
-      ...previous,
-      [product.id]: next ? String(next) : '',
+    
+    setQuantities((prev) => ({ 
+      ...prev, 
+      [product.id]: next > 0 ? String(next) : '' 
     }));
   };
 
-  const submit = () => {
+  // =========================================================
+  // 3. SUBMIT REQUEST
+  // =========================================================
+  const submit = async () => {
     if (!selectedItems.length) {
       Alert.alert('No products', 'Please select at least one product.');
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const request = createRequest({
-        storeId,
+      const user = await getUser();
+      if (!user?.id) {
+        Alert.alert('Error', 'User session expired. Please log in again.');
+        return;
+      }
+
+      // Format payload to match backend createStockRequest controller
+      const payload = {
+        outletId: user.id,
+        storeId: user.storeId,
+        requestType: 'refill',
         notes,
-        items: selectedItems.map(item => ({
-          productId: item.id,
-          quantity: item.quantity,
+        requestedBy: user.id,
+        totalAmount:totalAmount,
+        items: selectedItems.map((item) => ({
+          // Since we are requesting from a Store, we use productName (as outletProductId is for existing outlet stock)
+          inventoryId:item.inventoryId,
+          productName: item.name,
+          requestedQuantity: item.quantity,
         })),
-      });
+      };
+
+      // Call API service
+      await createStockRequest(payload);
 
       Alert.alert(
         'Request Submitted',
-        `${request.id} submitted successfully with Pending status.\nTotal: ${formatMoney(getTotalAmount(request))}`,
+        `Your stock request has been submitted successfully with Pending status.\nTotal: ${formatMoney(totalAmount)}`,
         [
           {
-            text: 'View Request',
-            onPress: () =>
-              router.replace({
-                pathname: '/product-requests/[id]',
-                params: { id: request.id },
-              }),
-          },
-          {
-            text: 'Done',
-            onPress: () => router.replace('/product-requests/all'),
+            text: 'Go to Dashboard',
+            onPress: () => router.replace('/product-requests'), // Redirect to dashboard
           },
         ]
       );
     } catch (error) {
-      reload();
-      Alert.alert('Request Failed', error.message);
+      console.error('Submit Error:', error);
+      Alert.alert('Request Failed', error.response?.data?.message || error.message);
+      reload(); // Refresh stock in case it changed
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  if (!store) {
+  // If loading initial data
+  if (loading && !refreshing) {
     return (
-      <SafeAreaView style={s.screen} edges={['top']}>
-        <View style={s.content}>
-          <PageHeader
-            title="Select Products"
-            subtitle="The selected store could not be loaded."
-            back
-          />
-
-          <EmptyState text="Store not found. Please select a store again." />
-
-          <PrimaryButton
-            title="Choose Store"
-            icon="storefront-outline"
-            onPress={() => router.replace('/product-requests/add')}
-          />
-        </View>
-      </SafeAreaView>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={ORANGE} />
+        <Text style={{ marginTop: 12, color: MUTED }}>Loading store products...</Text>
+      </View>
     );
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={s.content}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-      }
+    <ScrollView 
+      contentContainerStyle={s.content} 
+      keyboardShouldPersistTaps="handled" 
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
-      <PageHeader
-        title="Select Products"
-        subtitle={store.name}
-        back
-      />
-
+      <PageHeader title="Select Products" subtitle={storeName} back />
+      
       <View style={s.infoBox}>
-        <Ionicons
-          name="information-circle-outline"
-          size={19}
-          color={ORANGE}
-        />
-        <Text style={[s.muted, { flex: 1 }]}>
-          Select quantities within available stock. Prices are calculated automatically.
-        </Text>
+        <Ionicons name="information-circle-outline" size={19} color={ORANGE} />
+        <Text style={[s.muted, { flex: 1 }]}>Select quantities within available stock. Prices are calculated automatically.</Text>
       </View>
 
       <View style={s.searchBox}>
         <Ionicons name="search-outline" size={19} color={MUTED} />
-        <TextInput
-          placeholder="Search products or SKU"
-          placeholderTextColor={MUTED}
-          value={search}
-          onChangeText={setSearch}
-          style={s.searchInput}
+        <TextInput 
+          placeholder="Search products or SKU" 
+          placeholderTextColor={MUTED} 
+          value={search} 
+          onChangeText={setSearch} 
+          style={s.searchInput} 
         />
       </View>
 
@@ -609,7 +630,7 @@ function ProductSelection() {
         <Text style={s.muted}>{visibleProducts.length} products</Text>
       </View>
 
-      {visibleProducts.map(product => {
+      {visibleProducts.map((product) => {
         const quantity = quantities[product.id] || '';
         const outOfStock = product.available <= 0;
         const amount = (Number(quantity) || 0) * product.price;
@@ -618,81 +639,58 @@ function ProductSelection() {
           <View key={product.id} style={s.productCard}>
             <View style={s.spaceBetween}>
               <View style={s.productIcon}>
-                <Ionicons
-                  name="cube-outline"
-                  size={23}
-                  color={ORANGE}
-                />
+                <Ionicons name="cube-outline" size={23} color={ORANGE} />
               </View>
-
               <View style={{ flex: 1 }}>
                 <Text style={s.productName}>{product.name}</Text>
                 <Text style={s.muted}>{product.sku}</Text>
-                <Text style={s.price}>
-                  {formatMoney(product.price)} / {product.unit}
-                </Text>
+                <Text style={s.price}>{formatMoney(product.price)} / {product.unit}</Text>
               </View>
-
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={s.sectionLabel}>AVAILABLE</Text>
-                <Text
-                  style={[
-                    s.available,
-                    outOfStock && { color: RED },
-                  ]}
-                >
+                <Text style={[s.available, outOfStock && { color: RED }]}>
                   {product.available} {product.unit}
                 </Text>
               </View>
             </View>
-
+            
             <View style={s.line} />
-
+            
             <View style={s.spaceBetween}>
               <View style={{ flex: 1 }}>
                 <Text style={s.value}>Request Quantity</Text>
-                <Text style={s.muted}>
-                  Max: {product.available} {product.unit}
-                </Text>
+                <Text style={s.muted}>Max: {product.available} {product.unit}</Text>
               </View>
-
+              
               {outOfStock ? (
                 <Text style={s.outOfStock}>Out of Stock</Text>
               ) : (
                 <View style={s.quantityControl}>
-                  <Pressable
-                    style={s.stepButton}
-                    onPress={() => stepQuantity(product, -1)}
-                  >
+                  <Pressable style={s.stepButton} onPress={() => stepQuantity(product, -1)}>
                     <Ionicons name="remove" size={19} color={TEXT} />
                   </Pressable>
-
-                  <TextInput
-                    style={s.quantityInput}
-                    keyboardType="number-pad"
-                    value={quantity}
-                    onChangeText={value => changeQuantity(product, value)}
-                    placeholder="0"
-                    placeholderTextColor={MUTED}
-                    maxLength={7}
-                    selectTextOnFocus
+                  
+                  <TextInput 
+                    style={s.quantityInput} 
+                    keyboardType="number-pad" 
+                    value={quantity} 
+                    onChangeText={(value) => changeQuantity(product, value)} 
+                    placeholder="0" 
+                    placeholderTextColor={MUTED} 
+                    maxLength={7} 
+                    selectTextOnFocus 
                   />
-
-                  <Pressable
-                    style={s.stepButton}
-                    onPress={() => stepQuantity(product, 1)}
-                  >
+                  
+                  <Pressable style={s.stepButton} onPress={() => stepQuantity(product, 1)}>
                     <Ionicons name="add" size={19} color={TEXT} />
                   </Pressable>
                 </View>
               )}
             </View>
-
+            
             {Number(quantity) > 0 && (
               <View style={s.lineTotal}>
-                <Text style={s.muted}>
-                  {quantity} × {formatMoney(product.price)}
-                </Text>
+                <Text style={s.muted}>{quantity} × {formatMoney(product.price)}</Text>
                 <Text style={s.orangeValue}>{formatMoney(amount)}</Text>
               </View>
             )}
@@ -700,79 +698,103 @@ function ProductSelection() {
         );
       })}
 
-      {!visibleProducts.length && (
-        <EmptyState text="No products found for this search." />
-      )}
+      {!visibleProducts.length && <EmptyState text="No products found for this store." />}
 
       <View style={s.card}>
         <Text style={s.sectionTitle}>Request Notes</Text>
-        <TextInput
-          style={s.notesInput}
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-          placeholder="Enter optional request notes..."
-          placeholderTextColor={MUTED}
-          textAlignVertical="top"
+        <TextInput 
+          style={s.notesInput} 
+          value={notes} 
+          onChangeText={setNotes} 
+          multiline 
+          placeholder="Enter optional request notes..." 
+          placeholderTextColor={MUTED} 
+          textAlignVertical="top" 
         />
       </View>
 
       <View style={s.card}>
         <Text style={s.sectionTitle}>Request Summary</Text>
-        <SummaryRow
-          label="Selected Products"
-          value={String(selectedItems.length)}
-        />
-        <SummaryRow
-          label="Total Quantity"
-          value={String(totalQuantity)}
-        />
-        <SummaryRow
-          label="Total Amount"
-          value={formatMoney(totalAmount)}
-          strong
-        />
+        <SummaryRow label="Selected Products" value={String(selectedItems.length)} />
+        <SummaryRow label="Total Quantity" value={String(totalQuantity)} />
+        <SummaryRow label="Total Amount" value={formatMoney(totalAmount)} strong />
       </View>
 
-      <PrimaryButton
-        title={`Submit Request · ${formatMoney(totalAmount)}`}
-        icon="paper-plane-outline"
-        onPress={submit}
-        disabled={!selectedItems.length}
-      />
+      {isSubmitting ? (
+        <View style={{ height: 52, justifyContent: 'center', alignItems: 'center', backgroundColor: ORANGE, borderRadius: 14, marginTop: 15, opacity: 0.7 }}>
+          <ActivityIndicator color="#FFF" />
+        </View>
+      ) : (
+        <PrimaryButton 
+          title={`Submit Request · ${formatMoney(totalAmount)}`} 
+          icon="paper-plane-outline" 
+          onPress={submit} 
+          disabled={!selectedItems.length} 
+        />
+      )}
     </ScrollView>
   );
 }
-
+// 🆕 Updated AllRequests Component
 function AllRequests() {
   const [requests, setRequests] = useState([]);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const reload = useCallback(() => {
-    setRequests(getRequests());
-  }, []);
+  // 1. Fetch Requests from API
+  const fetchRequests = async () => {
+    try {
+      const user = await getUser();
+      if (!user?.id) return;
+
+      // Fetch requests for this specific outlet
+      const response = await getAllStockRequests({ outletId: user.id });
+      
+      // The API returns { success, total, page, totalPages, data: [...] }
+      if (response.success && response.data) {
+        setRequests(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch requests:', error);
+      Alert.alert('Error', 'Failed to load requests. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
-      reload();
-    }, [reload])
+      fetchRequests();
+    }, [])
   );
 
-  const filtered = requests.filter(request => {
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchRequests();
+  };
+
+  // 2. Filter and Search Logic
+  const filtered = requests.filter((request) => {
+    // Status filter
     const matchesStatus =
-      filter === 'All' || request.status === filter;
+      filter === 'All' || String(request.status).toLowerCase() === filter.toLowerCase();
 
-    const text =
-      `${request.id} ${request.storeName} ${request.items
-        .map(item => item.name)
-        .join(' ')}`.toLowerCase();
+    // Search filter (search by Request Number or Product Name)
+    const searchText = `${request.requestNumber} ${request.items
+      ?.map((item) => item.productName)
+      .join(' ')}`.toLowerCase();
 
-    return matchesStatus && text.includes(search.toLowerCase());
+    return matchesStatus && searchText.includes(search.toLowerCase());
   });
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView 
+      contentContainerStyle={s.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <PageHeader
         title="All Requests"
         subtitle="View and track every request"
@@ -792,31 +814,19 @@ function AllRequests() {
           style={s.searchInput}
           value={search}
           onChangeText={setSearch}
-          placeholder="Search request, store or product"
+          placeholder="Search request or product"
           placeholderTextColor={MUTED}
         />
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginBottom: 18 }}
-      >
-        {['All', 'Pending', 'Approved', 'Rejected'].map(item => (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
+        {['All', 'Pending', 'Approved', 'Completed', 'Rejected'].map((item) => (
           <Pressable
             key={item}
             onPress={() => setFilter(item)}
-            style={[
-              s.filter,
-              filter === item && s.activeFilter,
-            ]}
+            style={[s.filter, filter === item && s.activeFilter]}
           >
-            <Text
-              style={[
-                s.filterText,
-                filter === item && { color: '#FFFFFF' },
-              ]}
-            >
+            <Text style={[s.filterText, filter === item && { color: '#FFFFFF' }]}>
               {item}
             </Text>
           </Pressable>
@@ -828,27 +838,40 @@ function AllRequests() {
         <Text style={s.muted}>{filtered.length} results</Text>
       </View>
 
-      {filtered.length ? (
-        filtered.map(item => (
-          <RequestCard key={item.id} request={item} />
-        ))
+      {/* 3. Render States */}
+      {loading ? (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={ORANGE} />
+          <Text style={{ marginTop: 12, color: MUTED }}>Loading requests...</Text>
+        </View>
+      ) : filtered.length > 0 ? (
+        filtered.map((item) => <RequestCard key={item.id} request={item} />)
       ) : (
         <EmptyState text="No matching requests found." />
       )}
     </ScrollView>
   );
 }
-
 function RequestDetails() {
   const params = useLocalSearchParams();
-  const id = String(
-    Array.isArray(params.id) ? params.id[0] || '' : params.id || ''
-  );
+  const id = String(Array.isArray(params.id) ? params.id[0] || '' : params.id || '');
 
   const [request, setRequest] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setRequest(getRequestById(id));
+  const reload = useCallback(async () => {
+    try {
+      setLoading(true);
+      const requestDetailsRes = await getStockRequestById(id);
+      
+      if (requestDetailsRes.success) {
+        setRequest(requestDetailsRes.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch stock request:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useFocusEffect(
@@ -856,6 +879,17 @@ function RequestDetails() {
       reload();
     }, [reload])
   );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={s.screen} edges={['top']}>
+        <View style={[s.content, { justifyContent: 'center', alignItems: 'center', flex: 1 }]}>
+          <ActivityIndicator size="large" color={ORANGE} />
+          <Text style={{ marginTop: 12, color: MUTED }}>Loading details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!request) {
     return (
@@ -868,73 +902,76 @@ function RequestDetails() {
     );
   }
 
+  // Calculate total quantity manually from items array
+  const totalQuantity = request.items?.reduce(
+    (sum, item) => sum + Number(item.requestedQuantity || 0), 
+    0
+  ) || 0;
+
   return (
     <ScrollView contentContainerStyle={s.content}>
-      <PageHeader
-        title={request.id}
-        subtitle="Request Details"
-        back
+      <PageHeader 
+        title={request.requestNumber || `REQ-${request.id}`} 
+        subtitle="Request Details" 
+        back 
       />
-
+      
+      {/* REQUEST SUMMARY */}
       <View style={s.card}>
         <View style={s.spaceBetween}>
           <Text style={s.sectionTitle}>Request Information</Text>
           <StatusBadge status={request.status} />
         </View>
-
-        <SummaryRow label="Store" value={request.storeName} />
-        <SummaryRow label="Date" value={formatDate(request.date)} />
-        <SummaryRow
-          label="Products"
-          value={String(request.items.length)}
+        
+        <SummaryRow label="Request ID" value={request.requestNumber || String(request.id)} />
+        <SummaryRow label="Date" value={formatDate(request.createdAt)} />
+        <SummaryRow label="Store ID" value={String(request.storeId || 'N/A')} />
+        <SummaryRow label="Items Count" value={String(request.items?.length || 0)} />
+        <SummaryRow label="Total Quantity" value={`${totalQuantity} units`} />
+        <SummaryRow 
+          label="Total Amount" 
+          value={formatMoney(Number(request.totalAmount || 0))} 
+          strong 
         />
-        <SummaryRow
-          label="Total Quantity"
-          value={String(getTotalQuantity(request))}
-        />
-        <SummaryRow
-          label="Total Amount"
-          value={formatMoney(getTotalAmount(request))}
-          strong
-        />
+        {request.paymentStatus && (
+          <SummaryRow label="Payment Status" value={request.paymentStatus.toUpperCase()} />
+        )}
       </View>
 
-      <Text style={[s.sectionTitle, { marginBottom: 12 }]}>
+      <Text style={[s.sectionTitle, { marginBottom: 12, marginTop: 10 }]}>
         Requested Products
       </Text>
 
-      {request.items.map((item, index) => (
-        <View
-          key={`${item.productId}-${index}`}
-          style={s.productCard}
-        >
-          <Text style={s.productName}>{item.name}</Text>
-          <Text style={s.muted}>{item.sku}</Text>
-
-          <SummaryRow
-            label="Unit Price"
-            value={`${formatMoney(item.price)} / ${item.unit}`}
+      {/* ITEMS LIST */}
+      {request.items?.map((item, index) => (
+        <View key={`${item.id || index}`} style={s.productCard}>
+          {/* Using productName from the model */}
+          <Text style={s.productName}>{item.productName || 'Unknown Product'}</Text>
+          
+          <View style={s.line} />
+          
+          <SummaryRow 
+            label="Requested Quantity" 
+            value={`${item.requestedQuantity} units`} 
           />
-          <SummaryRow
-            label="Requested Quantity"
-            value={`${item.quantity} ${item.unit}`}
-          />
-          <SummaryRow
-            label="Available at Submission"
-            value={`${item.availableAtRequest} ${item.unit}`}
-          />
-          <SummaryRow
-            label="Currently Available"
-            value={`${getAvailableStock(item.productId)} ${item.unit}`}
-          />
-          <SummaryRow
-            label="Line Total"
-            value={formatMoney(item.quantity * item.price)}
-            strong
+          
+          {/* If it has been approved/partially approved, show the approved qty */}
+          {item.approvedQuantity > 0 && (
+             <SummaryRow 
+               label="Approved Quantity" 
+               value={`${item.approvedQuantity} units`} 
+             />
+          )}
+          
+          <SummaryRow 
+            label="Item Status" 
+            value={String(item.status || 'pending').toUpperCase()} 
+            strong={item.status === 'approved'}
           />
         </View>
       ))}
 
+      {/* NOTES */}
       <View style={s.card}>
         <Text style={s.sectionTitle}>Request Notes</Text>
         <Text style={[s.muted, { marginTop: 10 }]}>
@@ -942,10 +979,9 @@ function RequestDetails() {
         </Text>
       </View>
 
-
-      <PrimaryButton
-        title="View All Requests"
-        onPress={() => router.replace('/product-requests/all')}
+      <PrimaryButton 
+        title="Back to Dashboard" 
+        onPress={() => router.replace('/product-requests')} 
       />
     </ScrollView>
   );

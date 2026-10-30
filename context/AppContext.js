@@ -11,7 +11,8 @@ import { Alert } from 'react-native';
 import { getUser } from '../utils/storage';
 import { getAllProducts, updateStock } from '../service/outletProductService';
 import { createSale, approveSale, getAllSales } from '../service/saleService';
-import { createRawMaterialUsage } from '../service/rawMaterialUsageService';
+import { createRawMaterialUsage, getRawMaterialUsages } from '../service/rawMaterialUsageService';
+import { createStockRequest, getAllStockRequests } from '../service/stockRequestService';
 
 const AppContext = createContext(null);
 
@@ -26,6 +27,7 @@ export function AppProvider({ children }) {
   const [rawMaterials, setRawMaterials] = useState([]);
   const [usageHistory, setUsageHistory] = useState([]);
   const [bills, setBills] = useState([]);
+  const [stockRequests, setStockRequests] = useState([]);
 
   // =========================================================
   // FETCH INITIAL DATA
@@ -78,6 +80,38 @@ export function AppProvider({ children }) {
       const billsRes = await getAllSales({ outletId: storedUser.id, limit: 20 });
       setBills(billsRes.data || []);
 
+      // 🆕 3. Fetch Raw Material Usage History
+      const usageRes = await getRawMaterialUsages({
+        outletId: storedUser.id,
+        limit: 50 // Fetch last 50 records for the dashboard/history
+      });
+      // Map backend data to match frontend UI expectations
+      const mappedUsage = (usageRes.data || []).map((u) => {
+        const dateObj = new Date(u.date);
+
+        return {
+          id: u.id,
+          materialId: u.outletProductId,
+          material: u.rawMaterial?.name || 'Unknown Material',
+          qty: Number(u.quantityUsed),
+          unit: u.unit || u.rawMaterial?.units || 'Unit',
+          type: u.usageType,
+          date: dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          time: dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          remarks: u.remarks || '',
+          unitCost: Number(u.costAtTimeOfUsage) / Number(u.quantityUsed) || 0,
+          cost: Number(u.costAtTimeOfUsage || 0),
+        };
+      });
+
+      setUsageHistory(mappedUsage);
+      // 🆕 4. Fetch Outlet's Stock Requests
+      const stockReqRes = await getAllStockRequests({
+        outletId: storedUser.id,
+        limit: 50
+      });
+      setStockRequests(stockReqRes.data || []);
+
     } catch (error) {
       console.error('Failed to load context data:', error);
       Alert.alert('Error', 'Failed to load inventory data from server.');
@@ -88,7 +122,51 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     fetchData();
+
   }, [fetchData]);
+
+  // =========================================================
+  // 🆕 ADD NEW STOCK REQUEST (By Outlet)
+  // =========================================================
+  const addStockRequest = async ({ requestType = 'refill', notes, items }) => {
+    if (!items || items.length === 0) {
+      Alert.alert('Error', 'Please add at least one item to request.');
+      return false;
+    }
+
+    try {
+      const storedUser = await getUser();
+      if (!storedUser?.id) {
+        Alert.alert('Error', 'User session expired.');
+        return false;
+      }
+
+      // Format payload to match backend controller
+      const payload = {
+        outletId: storedUser.id,
+        requestType,
+        notes,
+        requestedBy: storedUser.id,
+        items: items.map(i => ({
+          outletProductId: i.outletProductId || null,
+          productName: i.productName,
+          requestedQuantity: i.requestedQuantity,
+        }))
+      };
+
+      // Call API
+      await createStockRequest(payload);
+      
+      // Refresh to get updated list
+      await fetchData(); 
+      
+      return true;
+    } catch (error) {
+      console.error('Create Stock Request Error:', error);
+      Alert.alert('Request Failed', error.response?.data?.message || error.message);
+      return false;
+    }
+  };
 
   // =========================================================
   // BILLING CART
@@ -147,7 +225,7 @@ export function AppProvider({ children }) {
   const transferInventory = async (id, live, reserve) => {
 
     try {
-      await updateStock(id,live,reserve);
+      await updateStock(id, live, reserve);
 
       setInventory((prev) =>
         prev.map((item) =>
@@ -184,29 +262,29 @@ export function AppProvider({ children }) {
   // =========================================================
   const addRawMaterialUsage = async ({ materialId, qty, type = 'Given to Cook', remarks = '', date }) => {
     const quantity = Number(qty) || 0;
-    
+
     // 1. Basic Validation
     if (quantity <= 0) {
       Alert.alert('Enter Quantity', 'Usage quantity must be greater than zero.');
       return false;
     }
-  
+
     const material = rawMaterials.find((x) => String(x.id) === String(materialId));
     if (!material) {
       Alert.alert('Material Not Found', 'Please select a valid raw material.');
       return false;
     }
-  
+
     try {
       const user = await getUser();
       if (!user?.id) {
         Alert.alert('Error', 'User session expired. Please log in again.');
         return false;
       }
-  
+
       // 2. Call the new backend API 
       // (Backend handles the check, transaction, and stock deduction)
-      const rawMaterialUsage= {
+      const rawMaterialUsage = {
         outletProductId: material.id,
         quantityUsed: quantity,
         usageType: type,
@@ -216,41 +294,43 @@ export function AppProvider({ children }) {
         createdBy: user.id,
       };
       createRawMaterialUsage(rawMaterialUsage);
+      await fetchData();
+
       // 3. Update local rawMaterials state (optimistic UI update)
       // Deduct from both 'quantity' and 'liveStock' in local state
-      setRawMaterials((prev) =>
-        prev.map((m) =>
-          String(m.id) === String(materialId)
-            ? { 
-                ...m, 
-                quantity: Math.max(0, (Number(m.quantity) || 0) - quantity),
-                liveStock: Math.max(0, (Number(m.liveStock) || 0) - quantity) 
-              }
-            : m
-        )
-      );
-  
-      // 4. Add to local usageHistory for immediate UI update
-      const unitCost = Number(material.unitCost || material.costPrice || 0);
-      const totalCost = quantity * unitCost;
-      const now = new Date();
-      
-      const newUsage = {
-        id: `U${Date.now()}`, // Temporary local ID for UI key
-        materialId: material.id,
-        material: material.name,
-        qty: quantity,
-        unit: material.unit || material.units || 'Unit',
-        type,
-        date: date || now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        remarks,
-        unitCost: unitCost,
-        cost: totalCost,
-      };
-  
-      setUsageHistory((prev) => [newUsage, ...prev]);
-      
+      // setRawMaterials((prev) =>
+      //   prev.map((m) =>
+      //     String(m.id) === String(materialId)
+      //       ? {
+      //         ...m,
+      //         quantity: Math.max(0, (Number(m.quantity) || 0) - quantity),
+      //         liveStock: Math.max(0, (Number(m.liveStock) || 0) - quantity)
+      //       }
+      //       : m
+      //   )
+      // );
+
+      // // 4. Add to local usageHistory for immediate UI update
+      // const unitCost = Number(material.unitCost || material.costPrice || 0);
+      // const totalCost = quantity * unitCost;
+      // const now = new Date();
+
+      // const newUsage = {
+      //   id: `U${Date.now()}`, // Temporary local ID for UI key
+      //   materialId: material.id,
+      //   material: material.name,
+      //   qty: quantity,
+      //   unit: material.unit || material.units || 'Unit',
+      //   type,
+      //   date: date || now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      //   time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      //   remarks,
+      //   unitCost: unitCost,
+      //   cost: totalCost,
+      // };
+
+      // setUsageHistory((prev) => [newUsage, ...prev]);
+
       return true;
     } catch (error) {
       // The backend will return an error message if stock is insufficient
@@ -259,7 +339,7 @@ export function AppProvider({ children }) {
       return false;
     }
   };
-  
+
   const useRawMaterial = (id, qty, type, remarks) => {
     return addRawMaterialUsage({ materialId: id, qty, type, remarks });
   };
@@ -383,6 +463,8 @@ export function AppProvider({ children }) {
         clearCart,
         addBill,
         finalizeBill,
+        stockRequests,
+        addStockRequest,
         totals,
       }}
     >
