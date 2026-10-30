@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import {ScrollView,Text,View,Pressable,TextInput,StyleSheet,ActivityIndicator} from 'react-native';
-import { router } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {ScrollView,Text,View,Pressable,TextInput,StyleSheet,ActivityIndicator,Alert} from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/ui';
 import { C } from '../../constants/colors';
@@ -12,43 +12,74 @@ export default function Billing() {
     addToCart,
     cart = [],
     clearCart,
+    changeCartQty, // Ensure this is destructured from context
     bills = [],
-    loading, // Added from AppContext
+    refreshData,
+    loading,
   } = useApp();
 
   const [search, setSearch] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
   /*
   =========================================================
   FILTER INVENTORY
   =========================================================
   */
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-
     return inventory.filter((item) => {
       const name = String(item?.name || '').toLowerCase();
       const sku = String(item?.sku || '').toLowerCase();
-      // Backend uses categoryName (can be ID or string)
-      const category = String(item?.categoryName || '').toLowerCase(); 
+      const category = String(item?.categoryName || '').toLowerCase();
 
-      return (
-        !q ||
-        name.includes(q) ||
-        sku.includes(q) ||
-        category.includes(q)
-      );
+      return !q || name.includes(q) || sku.includes(q) || category.includes(q);
     });
   }, [inventory, search]);
 
+  const billCount = Array.isArray(bills) ? bills.length : 0;
+
   /*
   =========================================================
-  BILL COUNT
+  HANDLE TEXT INPUT CHANGE FOR QUANTITY
   =========================================================
   */
+  const handleQtyChange = (val, item, currentQty, maxLive) => {
+    // Remove any non-numeric characters
+    const numericStr = val.replace(/[^0-9]/g, '');
+    let newQty = parseInt(numericStr, 10);
 
-  const billCount = Array.isArray(bills) ? bills.length : 0;
+    if (isNaN(newQty)) {
+      newQty = 0;
+    }
+
+    if (newQty > maxLive) {
+      newQty = maxLive;
+      Alert.alert('Stock Limit', `Only ${maxLive} ${item.unit || 'units'} available.`);
+    }
+
+    if (newQty === currentQty) return;
+
+    if (newQty === 0) {
+      // Remove from cart
+      changeCartQty(item.id, -currentQty);
+    } else if (currentQty === 0) {
+      // Add to cart (adds 1 by default)
+      addToCart(item);
+      // If they typed a number greater than 1, add the difference
+      if (newQty > 1) {
+        changeCartQty(item.id, newQty - 1);
+      }
+    } else {
+      // Update existing
+      changeCartQty(item.id, newQty - currentQty);
+    }
+  };
 
   /*
   =========================================================
@@ -73,7 +104,6 @@ export default function Billing() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* TOP SPACING */}
         <View style={styles.topSpacer} />
 
         {/* PAGE HEADER */}
@@ -134,7 +164,6 @@ export default function Billing() {
         {/* SEARCH */}
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={19} color={C.muted} />
-
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -142,7 +171,6 @@ export default function Billing() {
             placeholderTextColor="#9B96A8"
             style={styles.searchInput}
           />
-
           {search.length > 0 && (
             <Pressable onPress={() => setSearch('')} style={styles.searchClear}>
               <Ionicons name="close-circle" size={19} color={C.muted} />
@@ -158,9 +186,14 @@ export default function Billing() {
             const disabled = live <= 0;
             const itemKey = item?.id ?? `${item?.name || 'item'}-${index}`;
 
+            // Get the current cart quantity for this item
+            const cartItem = cart.find((c) => String(c.id) === String(item.id));
+            const qty = cartItem ? cartItem.qty : 0;
+
             return (
               <View key={String(itemKey)} style={styles.itemCard}>
                 <View style={styles.itemRow}>
+                  
                   {/* ITEM ICON */}
                   <View style={[styles.itemIcon, disabled && styles.itemIconDisabled]}>
                     <Ionicons
@@ -180,9 +213,7 @@ export default function Billing() {
                       <Text style={styles.itemPrice}>
                         ₹{mrp.toLocaleString('en-IN')}
                       </Text>
-
                       <View style={styles.metaDot} />
-
                       <Text style={disabled ? styles.stockOut : styles.stockLive}>
                         Live {live} {item?.unit || 'Pc'}
                       </Text>
@@ -193,22 +224,57 @@ export default function Billing() {
                     )}
                   </View>
 
-                  {/* ADD BUTTON */}
-                  <Pressable
-                    disabled={disabled}
-                    onPress={() => addToCart(item)}
-                    style={({ pressed }) => [
-                      styles.addButton,
-                      disabled && styles.addButtonDisabled,
-                      pressed && !disabled && styles.addButtonPressed,
-                    ]}
-                  >
-                    <Ionicons
-                      name="add"
-                      size={22}
-                      color={disabled ? '#AAA4B4' : '#FFFFFF'}
-                    />
-                  </Pressable>
+                  {/* QUANTITY CONTROLS */}
+                  {!disabled && (
+                    <View style={styles.qtyContainer}>
+                      {/* Minus Button */}
+                      <Pressable
+                        onPress={() => changeCartQty(item.id, -1)}
+                        disabled={qty === 0}
+                        style={({ pressed }) => [
+                          styles.qtyBtn,
+                          qty === 0 && styles.qtyBtnDisabled,
+                          pressed && qty > 0 && styles.qtyBtnPressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name="remove"
+                          size={18}
+                          color={qty === 0 ? '#AAA4B4' : '#FFFFFF'}
+                        />
+                      </Pressable>
+
+                      {/* Quantity Input */}
+                      <TextInput
+                        style={styles.qtyInput}
+                        keyboardType="numeric"
+                        value={String(qty)}
+                        onChangeText={(val) => handleQtyChange(val, item, qty, live)}
+                        selectTextOnFocus
+                      />
+
+                      {/* Plus Button */}
+                      <Pressable
+                        onPress={() => {
+                          if (qty === 0) addToCart(item);
+                          else changeCartQty(item.id, 1);
+                        }}
+                        disabled={qty >= live}
+                        style={({ pressed }) => [
+                          styles.qtyBtn,
+                          qty >= live && styles.qtyBtnDisabled,
+                          pressed && qty < live && styles.qtyBtnPressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name="add"
+                          size={18}
+                          color={qty >= live ? '#AAA4B4' : '#FFFFFF'}
+                        />
+                      </Pressable>
+                    </View>
+                  )}
+
                 </View>
               </View>
             );
@@ -279,7 +345,7 @@ const styles = StyleSheet.create({
   topHeader: {
     minHeight: 58,
     marginBottom: 14,
-    paddingLeft: 58, // leaves space for hamburger
+    paddingLeft: 58,
     paddingRight: 4,
     flexDirection: 'row',
     alignItems: 'center',
@@ -526,20 +592,37 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 4,
   },
-  addButton: {
-    width: 40,
-    height: 40,
+
+  /* QUANTITY CONTROLS */
+  qtyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F0F7',
     borderRadius: 12,
-    backgroundColor: C.primary,
+    height: 38,
+  },
+  qtyBtn: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: C.primary,
+    borderRadius: 8,
+    margin: 3,
   },
-  addButtonDisabled: {
-    backgroundColor: '#F0EDF4',
+  qtyBtnDisabled: {
+    backgroundColor: '#D1C9DF',
   },
-  addButtonPressed: {
-    opacity: 0.72,
-    transform: [{ scale: 0.94 }],
+  qtyBtnPressed: {
+    opacity: 0.7,
+  },
+  qtyInput: {
+    width: 32,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.text,
+    padding: 0,
   },
 
   /* EMPTY */

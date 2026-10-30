@@ -1,88 +1,55 @@
-import React, {
-  useMemo,
-  useState,
-} from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  Alert,
-  TextInput,
-} from 'react-native';
-
-import {
-  router,
-  useLocalSearchParams,
-} from 'expo-router';
-
+import React, {useCallback, useMemo,useState} from 'react';
+import {ScrollView,Text,View,Pressable,Alert,TextInput} from 'react-native';
+import {router,useFocusEffect,useLocalSearchParams} from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-  Button,
-} from '../components/ui';
-
+import {Header,Card,Button} from '../components/ui';
 import { C } from '../constants/colors';
 import { useApp } from '../context/AppContext';
 import { safeBack } from '../utils/navigation';
 
 export default function TransferStock() {
 
-  const params =
-    useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const requestedId = params?.id;
+  const { inventory, transferInventory,refreshData } = useApp();
 
-  const requestedId =
-    params?.id;
-
-  const {
-    inventory,
-    transferInventory,
-  } = useApp();
-
-  const [selectedId, setSelectedId] =
-    useState(
+  const [selectedId, setSelectedId] = useState(
       requestedId
         ? String(requestedId)
         : ''
     );
 
-  const [quantity, setQuantity] =
-    useState('1');
+  const [quantity, setQuantity] = useState('1');
 
-  const selectedItem =
-    useMemo(() => {
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
-      if (!inventory.length) {
-        return null;
-      }
+  const selectedItem = useMemo(() => {
 
-      if (!selectedId) {
-        return null;
-      }
+    if (!inventory.length) {
+      return null;
+    }
 
-      return (
-        inventory.find(
-          item =>
-            String(item.id) ===
-            String(selectedId)
-        ) || null
-      );
+    if (!selectedId) {
+      return null;
+    }
 
-    }, [
-      inventory,
-      selectedId,
-    ]);
-
-  const availableReserve =
-    Number(
-      selectedItem?.reserve || 0
+    return (
+      inventory.find(
+        item =>
+          String(item.id) ===
+          String(selectedId)
+      ) || null
     );
 
-  const enteredQuantity =
-    Number(quantity) || 0;
+  }, [inventory, selectedId]);
+
+  const availableReserve = Number(selectedItem?.reservedStock || 0);
+
+  const enteredQuantity = Number(quantity) || 0;
 
   const transferQty =
     Math.min(
@@ -93,37 +60,16 @@ export default function TransferStock() {
       availableReserve
     );
 
-  const afterReserve =
-    Math.max(
-      0,
-      availableReserve -
-      transferQty
-    );
-
-  const afterLive =
-    Number(
-      selectedItem?.live || 0
-    ) + transferQty;
-
-  const totalStock =
-    Number(
-      selectedItem?.reserve || 0
-    ) +
-    Number(
-      selectedItem?.live || 0
-    );
+  const afterReserve = Math.max(0, availableReserve - transferQty);
+  const afterLive = Number(selectedItem?.live || 0) + transferQty;
+  const totalStock = Number(selectedItem?.reserve || 0) + Number(selectedItem?.live || 0);
 
   const selectItem = item => {
-
-    setSelectedId(
-      String(item.id)
-    );
-
+    setSelectedId(String(item.id));
     setQuantity('1');
   };
 
   const decrease = () => {
-
     setQuantity(
       String(
         Math.max(
@@ -158,7 +104,9 @@ export default function TransferStock() {
   };
 
   const transfer = () => {
-
+console.log("afterReserve::",afterReserve);
+console.log("afterLive::",afterLive);
+console.log("totalStock::",totalStock);
     if (!selectedItem) {
 
       Alert.alert(
@@ -209,7 +157,7 @@ export default function TransferStock() {
     const success =
       transferInventory(
         selectedItem.id,
-        enteredQuantity
+        afterLive,afterReserve
       );
 
     if (!success) {

@@ -92,10 +92,10 @@ export const updateProduct = (
  */
 export const updateStock = (
   id: number | string,
-  quantity: number,
-  operation: StockOperation = 'set'
+  liveStock: number,
+  reservedStock: number,
 ): Promise<any> => {
-  return client.patch(`/outlet-products/${id}/stock`, { quantity, operation });
+  return client.patch(`/outlet-products/${id}/stockTransfer`, { liveStock,reservedStock });
 };
 
 /**
