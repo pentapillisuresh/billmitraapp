@@ -119,6 +119,11 @@ const BUSINESS_MENU = [
     route: '/more',
   },
   {
+    label: 'Expenditure',
+    icon: 'wallet-outline',
+    route: '/expenditure',
+  },
+  {
     label: 'Settings',
     icon: 'settings-outline',
     route: '/more',
@@ -548,19 +553,19 @@ function Sidebar({ visible, onClose, currentPath }) {
 
             <View style={styles.menuDivider} />
 
-            {/* BUSINESS */}
-            <SectionTitle>BUSINESS</SectionTitle>
+          {/* BUSINESS */}
+<SectionTitle>BUSINESS</SectionTitle>
 
-            <View style={styles.menuSection}>
-              {BUSINESS_MENU.map((item) => (
-                <SidebarItem
-                  key={item.label}
-                  item={item}
-                  active={false}
-                  onPress={() => navigateTo(item.route)}
-                />
-              ))}
-            </View>
+<View style={styles.menuSection}>
+  {BUSINESS_MENU.map((item) => (
+    <SidebarItem
+      key={item.label}
+      item={item}
+      active={false}
+      onPress={() => navigateTo(item.route)}
+    />
+  ))}
+</View>
 
             {/* BUSINESS PROFILE */}
             <View style={styles.restaurantCard}>
