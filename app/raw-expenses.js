@@ -1,28 +1,10 @@
 import React, { useMemo, useState } from 'react';
-
-import {
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-  StyleSheet,
-  Platform,
-  Alert,
-} from 'react-native';
-
+import {ScrollView,Text,View,Pressable,StyleSheet,Platform,Alert} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
 import { router } from 'expo-router';
-
 import { Ionicons } from '@expo/vector-icons';
-
-import {
-  Header,
-  Card,
-} from '../components/ui';
-
+import {Header,Card} from '../components/ui';
 import { C } from '../constants/colors';
-
 import { useApp } from '../context/AppContext';
 
 
@@ -277,10 +259,7 @@ const parseUsageDate = (value) => {
 
 export default function RawExpenses() {
 
-  const {
-    rawMaterials,
-    usageHistory,
-  } = useApp();
+  const { rawMaterials, usageHistory} = useApp();
 
 
   // ----------------------------------------------------------

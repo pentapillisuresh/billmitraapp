@@ -18,6 +18,7 @@ export interface ExpenditurePayload {
   description: string;
   amount: number | string;
   date?: string;
+  ledgerType?: string;
   receiptImage?: {
     uri: string;
     name: string;
@@ -34,21 +35,7 @@ export interface ExpenditurePayload {
  * POST /api/outlet-expenditures
  */
 export const createExpenditure = (data: ExpenditurePayload): Promise<any> => {
-  const formData = new FormData();
-  
-  formData.append('category', data.category);
-  formData.append('description', data.description);
-  formData.append('amount', data.amount.toString());
-  if (data.date) formData.append('date', data.date);
-  
-  if (data.receiptImage) {
-    // React Native file object format
-    formData.append('receiptImage', data.receiptImage as any);
-  }
-
-  return client.post('/outlet-expenditures', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  return client.post('/outlet-expenditures', data);
 };
 
 /**
@@ -91,20 +78,8 @@ export const updateExpenditure = (
   id: number | string,
   data: Partial<ExpenditurePayload>
 ): Promise<any> => {
-  const formData = new FormData();
-  
-  if (data.category) formData.append('category', data.category);
-  if (data.description) formData.append('description', data.description);
-  if (data.amount) formData.append('amount', data.amount.toString());
-  if (data.date) formData.append('date', data.date);
-  
-  if (data.receiptImage) {
-    formData.append('receiptImage', data.receiptImage as any);
-  }
 
-  return client.put(`/outlet-expenditures/${id}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  return client.put(`/outlet-expenditures/${id}`, data);
 };
 
 /**
